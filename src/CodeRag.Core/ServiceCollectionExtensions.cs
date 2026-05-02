@@ -13,6 +13,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IReconciliationService, ReconciliationService>();
         services.AddTransient<IWorkspaceLoadingService, MsBuildWorkspaceLoadingService>();
         services.AddSingleton<IGitDiffService, CliGitDiffService>();
+        services.AddSingleton<IEmbeddingClient>(_ =>
+            new OpenAIEmbeddingClient(Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? "sk-not-configured"));
         return services;
     }
 }
