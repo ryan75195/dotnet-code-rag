@@ -254,6 +254,36 @@ public class ChunkExtractorTests
         chunks2.Where(c => c.SymbolKind == SymbolKinds.Method).Should().HaveCount(1);
     }
 
+    [Test]
+    public void Should_skip_files_outside_repository_root()
+    {
+        var src = "namespace X; public class Foo { }";
+        var tree = CSharpSyntaxTree.ParseText(src, path: "C:/elsewhere/Foo.cs");
+        var compilation = CSharpCompilation.Create(
+            "T",
+            new[] { tree },
+            new[] { MetadataReference.CreateFromFile(typeof(object).Assembly.Location) });
+
+        var chunks = _extractor.Extract(compilation, tree, "T", "T", "C:/repo", CancellationToken.None);
+
+        chunks.Should().BeEmpty();
+    }
+
+    [Test]
+    public void Should_skip_files_under_obj_or_bin()
+    {
+        var src = "namespace X; public class Foo { }";
+        var tree = CSharpSyntaxTree.ParseText(src, path: "C:/repo/obj/Debug/Generated.g.cs");
+        var compilation = CSharpCompilation.Create(
+            "T",
+            new[] { tree },
+            new[] { MetadataReference.CreateFromFile(typeof(object).Assembly.Location) });
+
+        var chunks = _extractor.Extract(compilation, tree, "T", "T", "C:/repo", CancellationToken.None);
+
+        chunks.Should().BeEmpty();
+    }
+
     private ImmutableArray<CodeChunk> ExtractFrom(string source)
     {
         var tree = CSharpSyntaxTree.ParseText(source, path: "C:/repo/src/Test.cs");

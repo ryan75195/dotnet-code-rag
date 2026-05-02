@@ -24,6 +24,14 @@ public sealed class ChunkExtractor : IChunkExtractor
         string repositoryRootPath,
         CancellationToken cancellationToken)
     {
+        if (!IsInRepository(syntaxTree.FilePath, repositoryRootPath))
+        {
+            return ImmutableArray<CodeChunk>.Empty;
+        }
+        if (IsObviouslyGenerated(syntaxTree.FilePath))
+        {
+            return ImmutableArray<CodeChunk>.Empty;
+        }
         var semanticModel = compilation.GetSemanticModel(syntaxTree);
         var root = syntaxTree.GetRoot(cancellationToken);
         var builder = ImmutableArray.CreateBuilder<CodeChunk>();
@@ -31,6 +39,30 @@ public sealed class ChunkExtractor : IChunkExtractor
         ExtractDelegateDeclarations(root, semanticModel, syntaxTree, projectName, assemblyName, repositoryRootPath, builder, cancellationToken);
         ExtractMemberDeclarations(root, semanticModel, syntaxTree, projectName, assemblyName, repositoryRootPath, builder, cancellationToken);
         return builder.ToImmutable();
+    }
+
+    private static bool IsInRepository(string? filePath, string repositoryRootPath)
+    {
+        if (string.IsNullOrEmpty(filePath))
+        {
+            return false;
+        }
+        var fullFile = Path.GetFullPath(filePath);
+        var fullRoot = Path.GetFullPath(repositoryRootPath);
+        return fullFile.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsObviouslyGenerated(string? filePath)
+    {
+        if (string.IsNullOrEmpty(filePath))
+        {
+            return false;
+        }
+        var normalised = filePath.Replace('\\', '/');
+        return normalised.Contains("/obj/", StringComparison.OrdinalIgnoreCase)
+            || normalised.Contains("/bin/", StringComparison.OrdinalIgnoreCase)
+            || normalised.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase)
+            || normalised.EndsWith(".g.i.cs", StringComparison.OrdinalIgnoreCase);
     }
 
     private void ExtractMemberDeclarations(
