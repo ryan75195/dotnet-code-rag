@@ -1,4 +1,5 @@
-﻿using CodeRag.Core.Indexing;
+﻿using System.Collections.Immutable;
+using CodeRag.Core.Indexing;
 using FluentAssertions;
 
 namespace CodeRag.Tests.Unit.Core.Indexing;
@@ -69,5 +70,58 @@ public class SqliteIndexStoreTests
         var act = async () => await reopened.OpenAsync(CancellationToken.None);
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*schema version*99*");
+    }
+
+    [Test]
+    public async Task Should_persist_all_columns_and_child_rows()
+    {
+        using var store = new SqliteIndexStore(_dbPath);
+        await store.OpenAsync(CancellationToken.None);
+
+        var chunk = TestChunks.SampleMethod();
+        long id = await store.InsertChunkAsync(chunk, CancellationToken.None);
+
+        id.Should().BePositive();
+        var roundTripped = await store.GetChunkByIdAsync(id, CancellationToken.None);
+        roundTripped.Should().BeEquivalentTo(chunk, options => options.Excluding(c => c.SourceText));
+    }
+
+    [Test]
+    public async Task Should_replace_child_rows()
+    {
+        using var store = new SqliteIndexStore(_dbPath);
+        await store.OpenAsync(CancellationToken.None);
+
+        var original = TestChunks.SampleMethod();
+        long id = await store.InsertChunkAsync(original, CancellationToken.None);
+
+        var updated = original with
+        {
+            Parameters = ImmutableArray.Create(new ChunkParameter(0, "x", "System.String", null, false))
+        };
+        await store.UpdateChunkAsync(id, updated, CancellationToken.None);
+
+        var roundTripped = await store.GetChunkByIdAsync(id, CancellationToken.None);
+        roundTripped!.Parameters.Should().HaveCount(1);
+        roundTripped.Parameters[0].Name.Should().Be("x");
+    }
+
+    [Test]
+    public async Task Should_persist_vector_keyed_by_chunk_id()
+    {
+        using var store = new SqliteIndexStore(_dbPath);
+        await store.OpenAsync(CancellationToken.None);
+
+        var chunk = TestChunks.SampleMethod();
+        long id = await store.InsertChunkAsync(chunk, CancellationToken.None);
+
+        var vector = new float[3072];
+        for (int i = 0; i < vector.Length; i++)
+        {
+            vector[i] = i * 0.001f;
+        }
+        await store.UpsertEmbeddingAsync(id, vector, CancellationToken.None);
+
+        (await store.HasEmbeddingAsync(id, CancellationToken.None)).Should().BeTrue();
     }
 }
