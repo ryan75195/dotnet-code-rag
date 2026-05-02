@@ -1,5 +1,5 @@
 <Project>
-  <ItemGroup Condition="'$(MSBuildProjectName)' == 'CodeRag.Cli' OR '$(MSBuildProjectName)' == 'CodeRag.Tests.Integration'">
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'CodeRag.Cli' OR '$(MSBuildProjectName)' == 'CodeRag.Tests.Integration' OR '$(MSBuildProjectName)' == 'CodeRag.Tests.Unit'">
     <None Include="$(MSBuildThisFileDirectory)external\sqlite-vec\runtimes\win-x64\native\vec0.dll">
       <Link>runtimes\win-x64\native\vec0.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
