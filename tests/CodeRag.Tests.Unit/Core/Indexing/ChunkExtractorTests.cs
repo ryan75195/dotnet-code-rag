@@ -1,0 +1,105 @@
+﻿using System.Collections.Immutable;
+using CodeRag.Core.Indexing;
+using CodeRag.Core.Indexing.Interfaces;
+using FluentAssertions;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+
+namespace CodeRag.Tests.Unit.Core.Indexing;
+
+[TestFixture]
+public class ChunkExtractorTests
+{
+    private IChunkExtractor _extractor = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _extractor = new ChunkExtractor(new SourceTextHashingService());
+    }
+
+    [Test]
+    public void Should_emit_one_chunk_for_a_top_level_class()
+    {
+        var chunks = ExtractFrom(@"
+            namespace Acme;
+            public class Foo { }
+        ");
+
+        var classChunk = chunks.Should().ContainSingle(c => c.SymbolKind == SymbolKinds.Class).Subject;
+        classChunk.SymbolDisplayName.Should().Be("Foo");
+        classChunk.FullyQualifiedSymbolName.Should().Be("Acme.Foo");
+        classChunk.ContainingNamespace.Should().Be("Acme");
+        classChunk.Accessibility.Should().Be(Accessibilities.Public);
+    }
+
+    [Test]
+    public void Should_capture_class_modifiers()
+    {
+        var chunks = ExtractFrom(@"
+            namespace Acme;
+            public abstract class Foo { }
+            public sealed class Bar { }
+        ");
+
+        var foo = chunks.Single(c => c.SymbolDisplayName == "Foo");
+        foo.Modifiers.IsAbstract.Should().BeTrue();
+        var bar = chunks.Single(c => c.SymbolDisplayName == "Bar");
+        bar.Modifiers.IsSealed.Should().BeTrue();
+    }
+
+    [Test]
+    public void Should_distinguish_record_class_from_record_struct()
+    {
+        var chunks = ExtractFrom(@"
+            namespace Acme;
+            public record Person(string Name);
+            public record struct Point(int X, int Y);
+        ");
+
+        chunks.Should().Contain(c => c.SymbolKind == SymbolKinds.RecordClass && c.SymbolDisplayName == "Person");
+        chunks.Should().Contain(c => c.SymbolKind == SymbolKinds.RecordStruct && c.SymbolDisplayName == "Point");
+    }
+
+    [Test]
+    public void Should_capture_struct_interface_enum_delegate()
+    {
+        var chunks = ExtractFrom(@"
+            namespace Acme;
+            public struct Vec { }
+            public interface IFoo { }
+            public enum Kind { A, B }
+            public delegate int Adder(int a, int b);
+        ");
+
+        chunks.Should().Contain(c => c.SymbolKind == SymbolKinds.Struct && c.SymbolDisplayName == "Vec");
+        chunks.Should().Contain(c => c.SymbolKind == SymbolKinds.Interface && c.SymbolDisplayName == "IFoo");
+        chunks.Should().Contain(c => c.SymbolKind == SymbolKinds.Enum && c.SymbolDisplayName == "Kind");
+        chunks.Should().Contain(c => c.SymbolKind == SymbolKinds.Delegate && c.SymbolDisplayName == "Adder");
+    }
+
+    [Test]
+    public void Should_capture_base_type_and_implemented_interfaces()
+    {
+        var chunks = ExtractFrom(@"
+            namespace Acme;
+            public interface IFoo { }
+            public class Base { }
+            public class Derived : Base, IFoo { }
+        ");
+
+        var derived = chunks.Single(c => c.SymbolDisplayName == "Derived");
+        derived.BaseTypeFullyQualifiedName.Should().Be("Acme.Base");
+        derived.ImplementedInterfaceFullyQualifiedNames.Should().Contain("Acme.IFoo");
+    }
+
+    private ImmutableArray<CodeChunk> ExtractFrom(string source)
+    {
+        var tree = CSharpSyntaxTree.ParseText(source, path: "C:/repo/src/Test.cs");
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            new[] { tree },
+            new[] { MetadataReference.CreateFromFile(typeof(object).Assembly.Location) });
+        return _extractor.Extract(compilation, tree, "TestProject", "TestAssembly", "C:/repo", CancellationToken.None);
+    }
+}

@@ -9,6 +9,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddCoreServices(this IServiceCollection services)
     {
         services.AddSingleton<ISourceTextHashingService, SourceTextHashingService>();
+        services.AddSingleton<IChunkExtractor, ChunkExtractor>();
         return services;
     }
 }
