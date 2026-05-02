@@ -45,6 +45,9 @@ dist-ssr/
 ## Test artifacts
 TestResults/
 
+## Worktrees
+.worktrees/
+
 ## Deploy
 deploy/.env
 publish/
