@@ -17,6 +17,12 @@ public sealed class FakeEmbeddingClient : IEmbeddingClient
         return Task.FromResult<IReadOnlyList<ReadOnlyMemory<float>>>(results);
     }
 
+    public void Reset()
+    {
+        CallCount = 0;
+        InputCount = 0;
+    }
+
     private static float[] SeededVectorFor(string input)
     {
         var seed = SHA256.HashData(Encoding.UTF8.GetBytes(input));

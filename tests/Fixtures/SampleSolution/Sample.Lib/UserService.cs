@@ -9,11 +9,12 @@ public sealed class UserService
         _logger = logger;
     }
 
-    public Task<User?> FindAsync(string name, CancellationToken cancellationToken)
+    public async Task<User?> FindAsync(string name, CancellationToken cancellationToken)
     {
         _logger.Log($"Looking up user {name}");
         cancellationToken.ThrowIfCancellationRequested();
+        await Task.Yield();
         User? user = string.IsNullOrEmpty(name) ? null : new User(name, 0);
-        return Task.FromResult(user);
+        return user;
     }
 }
