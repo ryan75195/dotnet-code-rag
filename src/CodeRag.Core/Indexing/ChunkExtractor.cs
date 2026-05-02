@@ -29,7 +29,47 @@ public sealed class ChunkExtractor : IChunkExtractor
         var builder = ImmutableArray.CreateBuilder<CodeChunk>();
         ExtractTypeDeclarations(root, semanticModel, syntaxTree, projectName, assemblyName, repositoryRootPath, builder, cancellationToken);
         ExtractDelegateDeclarations(root, semanticModel, syntaxTree, projectName, assemblyName, repositoryRootPath, builder, cancellationToken);
+        ExtractMemberDeclarations(root, semanticModel, syntaxTree, projectName, assemblyName, repositoryRootPath, builder, cancellationToken);
         return builder.ToImmutable();
+    }
+
+    private void ExtractMemberDeclarations(
+        SyntaxNode root,
+        SemanticModel semanticModel,
+        SyntaxTree syntaxTree,
+        string projectName,
+        string assemblyName,
+        string repositoryRootPath,
+        ImmutableArray<CodeChunk>.Builder builder,
+        CancellationToken cancellationToken)
+    {
+        foreach (var memberDecl in root.DescendantNodes().OfType<MemberDeclarationSyntax>())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (ShouldSkipMemberDeclaration(memberDecl))
+            {
+                continue;
+            }
+            var symbol = semanticModel.GetDeclaredSymbol(memberDecl, cancellationToken);
+            if (symbol is null || symbol.IsImplicitlyDeclared)
+            {
+                continue;
+            }
+            var chunk = TryBuildMemberChunk(symbol, memberDecl, syntaxTree, projectName, assemblyName, repositoryRootPath);
+            if (chunk is not null)
+            {
+                builder.Add(chunk);
+            }
+        }
+    }
+
+    private static bool ShouldSkipMemberDeclaration(MemberDeclarationSyntax memberDecl)
+    {
+        return memberDecl is BaseTypeDeclarationSyntax
+            or DelegateDeclarationSyntax
+            or NamespaceDeclarationSyntax
+            or FileScopedNamespaceDeclarationSyntax
+            or EnumMemberDeclarationSyntax;
     }
 
     private void ExtractTypeDeclarations(
@@ -304,5 +344,152 @@ public sealed class ChunkExtractor : IChunkExtractor
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
+    private CodeChunk? TryBuildMemberChunk(
+        ISymbol symbol,
+        MemberDeclarationSyntax declaration,
+        SyntaxTree tree,
+        string projectName,
+        string assemblyName,
+        string repositoryRootPath)
+    {
+        var kind = ResolveMemberKind(symbol, declaration);
+        if (kind is null)
+        {
+            return null;
+        }
+        var location = BuildLocation(declaration, tree, repositoryRootPath);
+        var sourceText = declaration.NormalizeWhitespace().ToFullString();
+        var details = ResolveMemberDetails(symbol);
+        return new CodeChunk(
+            ContainingProjectName: projectName,
+            ContainingAssemblyName: assemblyName,
+            RelativeFilePath: location.RelativeFilePath,
+            StartLineNumber: location.StartLineNumber,
+            EndLineNumber: location.EndLineNumber,
+            SymbolKind: kind,
+            SymbolDisplayName: symbol.Name,
+            SymbolSignatureDisplay: symbol.ToDisplayString(),
+            FullyQualifiedSymbolName: ToFullyQualifiedName(symbol),
+            ContainingNamespace: ResolveMemberContainingNamespace(symbol),
+            ParentSymbolFullyQualifiedName: symbol.ContainingType is null ? null : ToFullyQualifiedName(symbol.ContainingType),
+            Accessibility: ResolveAccessibility(symbol.DeclaredAccessibility),
+            Modifiers: BuildModifiers(symbol),
+            BaseTypeFullyQualifiedName: null,
+            ReturnTypeFullyQualifiedName: details.ReturnType,
+            ParameterCount: details.ParameterCount,
+            DocumentationCommentXml: NullIfEmpty(symbol.GetDocumentationCommentXml()),
+            SourceText: sourceText,
+            SourceTextHash: _hashingService.Hash(sourceText),
+            Attributes: BuildAttributes(symbol),
+            ImplementedInterfaceFullyQualifiedNames: ImmutableArray<string>.Empty,
+            Parameters: details.Parameters,
+            GenericTypeParameters: BuildMemberGenerics(symbol));
+    }
+
+    private static MemberDetails ResolveMemberDetails(ISymbol symbol)
+    {
+        return symbol switch
+        {
+            IMethodSymbol method => new MemberDetails(
+                method.ReturnsVoid ? null : ToFullyQualifiedTypeName(method.ReturnType),
+                BuildParameters(method.Parameters),
+                method.Parameters.Length),
+            IPropertySymbol property when property.IsIndexer => new MemberDetails(
+                ToFullyQualifiedTypeName(property.Type),
+                BuildParameters(property.Parameters),
+                property.Parameters.Length),
+            IPropertySymbol property => new MemberDetails(
+                ToFullyQualifiedTypeName(property.Type),
+                ImmutableArray<ChunkParameter>.Empty,
+                null),
+            IFieldSymbol field => new MemberDetails(
+                ToFullyQualifiedTypeName(field.Type),
+                ImmutableArray<ChunkParameter>.Empty,
+                null),
+            IEventSymbol evt => new MemberDetails(
+                ToFullyQualifiedTypeName(evt.Type),
+                ImmutableArray<ChunkParameter>.Empty,
+                null),
+            _ => new MemberDetails(null, ImmutableArray<ChunkParameter>.Empty, null),
+        };
+    }
+
+    private static string? ResolveMemberKind(ISymbol symbol, MemberDeclarationSyntax declaration) => (symbol, declaration) switch
+    {
+        (IMethodSymbol, ConversionOperatorDeclarationSyntax) => SymbolKinds.ConversionOperator,
+        (IMethodSymbol, OperatorDeclarationSyntax) => SymbolKinds.Operator,
+        (IMethodSymbol, ConstructorDeclarationSyntax) => SymbolKinds.Constructor,
+        (IMethodSymbol, DestructorDeclarationSyntax) => SymbolKinds.Destructor,
+        (IMethodSymbol, _) => SymbolKinds.Method,
+        (IPropertySymbol, IndexerDeclarationSyntax) => SymbolKinds.Indexer,
+        (IPropertySymbol, _) => SymbolKinds.Property,
+        (IFieldSymbol, _) => SymbolKinds.Field,
+        (IEventSymbol, _) => SymbolKinds.Event,
+        _ => null,
+    };
+
+    private static ImmutableArray<ChunkParameter> BuildParameters(ImmutableArray<IParameterSymbol> parameters)
+    {
+        var builder = ImmutableArray.CreateBuilder<ChunkParameter>();
+        for (int i = 0; i < parameters.Length; i++)
+        {
+            var parameter = parameters[i];
+            builder.Add(new ChunkParameter(
+                Ordinal: i,
+                Name: parameter.Name,
+                TypeFullyQualifiedName: ToFullyQualifiedTypeName(parameter.Type),
+                Modifier: ResolveParameterModifier(parameter),
+                HasDefaultValue: parameter.HasExplicitDefaultValue));
+        }
+        return builder.ToImmutable();
+    }
+
+    private static string? ResolveParameterModifier(IParameterSymbol parameter)
+    {
+        if (parameter.IsParams)
+        {
+            return "params";
+        }
+        return parameter.RefKind switch
+        {
+            RefKind.Ref => "ref",
+            RefKind.Out => "out",
+            RefKind.In => "in",
+            _ => null,
+        };
+    }
+
+    private static ImmutableArray<ChunkGenericTypeParameter> BuildMemberGenerics(ISymbol symbol)
+    {
+        if (symbol is not IMethodSymbol method)
+        {
+            return ImmutableArray<ChunkGenericTypeParameter>.Empty;
+        }
+        var builder = ImmutableArray.CreateBuilder<ChunkGenericTypeParameter>();
+        for (int i = 0; i < method.TypeParameters.Length; i++)
+        {
+            builder.Add(new ChunkGenericTypeParameter(i, method.TypeParameters[i].Name, null));
+        }
+        return builder.ToImmutable();
+    }
+
+    private static string ToFullyQualifiedTypeName(ITypeSymbol type)
+    {
+        var name = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        const string globalPrefix = "global::";
+        return name.StartsWith(globalPrefix, StringComparison.Ordinal) ? name[globalPrefix.Length..] : name;
+    }
+
+    private static string? ResolveMemberContainingNamespace(ISymbol symbol)
+    {
+        if (symbol.ContainingNamespace is null || symbol.ContainingNamespace.IsGlobalNamespace)
+        {
+            return null;
+        }
+        return symbol.ContainingNamespace.ToDisplayString();
+    }
+
     private sealed record ChunkLocation(string RelativeFilePath, int StartLineNumber, int EndLineNumber);
+
+    private sealed record MemberDetails(string? ReturnType, ImmutableArray<ChunkParameter> Parameters, int? ParameterCount);
 }

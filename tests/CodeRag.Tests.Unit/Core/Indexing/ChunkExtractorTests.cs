@@ -93,6 +93,83 @@ public class ChunkExtractorTests
         derived.ImplementedInterfaceFullyQualifiedNames.Should().Contain("Acme.IFoo");
     }
 
+    [Test]
+    public void Should_emit_method_chunks_with_signature_and_return_type()
+    {
+        var chunks = ExtractFrom(@"
+            using System.Threading.Tasks;
+            namespace Acme;
+            public class Foo
+            {
+                public async Task<int> RunAsync(string arg) => 0;
+            }
+        ");
+
+        var method = chunks.Single(c => c.SymbolKind == SymbolKinds.Method);
+        method.SymbolDisplayName.Should().Be("RunAsync");
+        method.ReturnTypeFullyQualifiedName.Should().StartWith("System.Threading.Tasks.Task");
+        method.Modifiers.IsAsync.Should().BeTrue();
+        method.Parameters.Should().HaveCount(1);
+        method.Parameters[0].Name.Should().Be("arg");
+        method.Parameters[0].TypeFullyQualifiedName.Should().Be("string");
+    }
+
+    [Test]
+    public void Should_capture_parameter_modifiers()
+    {
+        var chunks = ExtractFrom(@"
+            namespace Acme;
+            public class Foo
+            {
+                public void Mix(ref int a, out int b, in int c, params int[] d) { b = 0; }
+            }
+        ");
+
+        var method = chunks.Single(c => c.SymbolKind == SymbolKinds.Method);
+        method.Parameters[0].Modifier.Should().Be("ref");
+        method.Parameters[1].Modifier.Should().Be("out");
+        method.Parameters[2].Modifier.Should().Be("in");
+        method.Parameters[3].Modifier.Should().Be("params");
+    }
+
+    [Test]
+    public void Should_emit_constructor_chunk()
+    {
+        var chunks = ExtractFrom(@"
+            namespace Acme;
+            public class Foo { public Foo(int x) { } }
+        ");
+
+        chunks.Should().Contain(c => c.SymbolKind == SymbolKinds.Constructor);
+    }
+
+    [Test]
+    public void Should_emit_operator_and_conversion_operator_chunks()
+    {
+        var chunks = ExtractFrom(@"
+            namespace Acme;
+            public class Foo
+            {
+                public static Foo operator +(Foo a, Foo b) => a;
+                public static implicit operator int(Foo f) => 0;
+            }
+        ");
+
+        chunks.Should().Contain(c => c.SymbolKind == SymbolKinds.Operator);
+        chunks.Should().Contain(c => c.SymbolKind == SymbolKinds.ConversionOperator);
+    }
+
+    [Test]
+    public void Should_emit_indexer_chunk()
+    {
+        var chunks = ExtractFrom(@"
+            namespace Acme;
+            public class Foo { public int this[int i] => 0; }
+        ");
+
+        chunks.Should().Contain(c => c.SymbolKind == SymbolKinds.Indexer);
+    }
+
     private ImmutableArray<CodeChunk> ExtractFrom(string source)
     {
         var tree = CSharpSyntaxTree.ParseText(source, path: "C:/repo/src/Test.cs");
