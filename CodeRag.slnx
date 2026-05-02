@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CodeRag.Analyzers/CodeRag.Analyzers.csproj" />
+    <Project Path="src/CodeRag.Cli/CodeRag.Cli.csproj" />
+    <Project Path="src/CodeRag.Core/CodeRag.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CodeRag.Tests.Analyzers/CodeRag.Tests.Analyzers.csproj" />
+    <Project Path="tests/CodeRag.Tests.Architecture/CodeRag.Tests.Architecture.csproj" />
+    <Project Path="tests/CodeRag.Tests.Integration/CodeRag.Tests.Integration.csproj" />
+    <Project Path="tests/CodeRag.Tests.Unit/CodeRag.Tests.Unit.csproj" />
+  </Folder>
+</Solution>
