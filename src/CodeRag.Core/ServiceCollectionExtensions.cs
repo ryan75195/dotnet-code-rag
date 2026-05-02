@@ -15,6 +15,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IGitDiffService, CliGitDiffService>();
         services.AddSingleton<IEmbeddingClient>(_ =>
             new OpenAIEmbeddingClient(Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? "sk-not-configured"));
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<Func<string, IIndexStore>>(_ => path => new SqliteIndexStore(path));
+        services.AddTransient<IndexingDependencies>();
+        services.AddTransient<IIndexingService, IndexingService>();
         return services;
     }
 }
