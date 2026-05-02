@@ -225,7 +225,11 @@ internal sealed class IndexingService : IIndexingService
         var absolute = Path.GetFullPath(Path.Combine(repoRoot, changedFile));
         if (!File.Exists(absolute))
         {
-            await store.DeleteChunksForFileAsync(changedFile, ct);
+            var existingForDeletedFile = await store.GetChunkSummariesForFileAsync(changedFile, ct);
+            foreach (var summary in existingForDeletedFile)
+            {
+                deletes.Add(new DeleteOp(summary.ChunkId));
+            }
             return;
         }
 

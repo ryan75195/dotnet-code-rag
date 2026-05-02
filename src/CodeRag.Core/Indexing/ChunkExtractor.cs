@@ -9,6 +9,14 @@ namespace CodeRag.Core.Indexing;
 
 public sealed class ChunkExtractor : IChunkExtractor
 {
+    private static readonly SymbolDisplayFormat FullyQualifiedNameFormat = SymbolDisplayFormat.FullyQualifiedFormat
+        .WithMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType
+            | SymbolDisplayMemberOptions.IncludeParameters
+            | SymbolDisplayMemberOptions.IncludeType
+            | SymbolDisplayMemberOptions.IncludeRef)
+        .WithParameterOptions(SymbolDisplayParameterOptions.IncludeType
+            | SymbolDisplayParameterOptions.IncludeParamsRefOut);
+
     private readonly ISourceTextHashingService _hashingService;
 
     public ChunkExtractor(ISourceTextHashingService hashingService)
@@ -225,7 +233,7 @@ public sealed class ChunkExtractor : IChunkExtractor
 
     private static string ToFullyQualifiedName(ISymbol symbol)
     {
-        var name = symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var name = symbol.ToDisplayString(FullyQualifiedNameFormat);
         const string globalPrefix = "global::";
         return name.StartsWith(globalPrefix, StringComparison.Ordinal) ? name[globalPrefix.Length..] : name;
     }
