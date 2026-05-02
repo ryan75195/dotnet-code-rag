@@ -155,6 +155,7 @@ public sealed class ChunkExtractor : IChunkExtractor
     {
         var location = BuildLocation(declaration, tree, repositoryRootPath);
         var sourceText = BuildTypeSourceText(declaration);
+        var modifiers = BuildModifiers(symbol) with { IsPartial = ResolveIsPartialDeclaration(declaration) };
         return new CodeChunk(
             ContainingProjectName: projectName,
             ContainingAssemblyName: assemblyName,
@@ -168,7 +169,7 @@ public sealed class ChunkExtractor : IChunkExtractor
             ContainingNamespace: ResolveContainingNamespace(symbol),
             ParentSymbolFullyQualifiedName: symbol.ContainingType is null ? null : ToFullyQualifiedName(symbol.ContainingType),
             Accessibility: ResolveAccessibility(symbol.DeclaredAccessibility),
-            Modifiers: BuildModifiers(symbol),
+            Modifiers: modifiers,
             BaseTypeFullyQualifiedName: ResolveBaseType(symbol),
             ReturnTypeFullyQualifiedName: null,
             ParameterCount: null,
@@ -276,6 +277,18 @@ public sealed class ChunkExtractor : IChunkExtractor
             IMethodSymbol method => method.IsGenericMethod,
             _ => false,
         };
+    }
+
+    private static bool ResolveIsPartialDeclaration(SyntaxNode declaration)
+    {
+        return declaration is TypeDeclarationSyntax typeDeclaration
+            && typeDeclaration.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword));
+    }
+
+    private static bool ResolveIsPartialMember(MemberDeclarationSyntax declaration)
+    {
+        return declaration is MethodDeclarationSyntax method
+            && method.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword));
     }
 
     private static ImmutableArray<ChunkAttribute> BuildAttributes(ISymbol symbol)
@@ -391,6 +404,7 @@ public sealed class ChunkExtractor : IChunkExtractor
         var location = BuildLocation(declaration, tree, repositoryRootPath);
         var sourceText = declaration.NormalizeWhitespace().ToFullString();
         var details = ResolveMemberDetails(symbol);
+        var modifiers = BuildModifiers(symbol) with { IsPartial = ResolveIsPartialMember(declaration) };
         return new CodeChunk(
             ContainingProjectName: projectName,
             ContainingAssemblyName: assemblyName,
@@ -404,7 +418,7 @@ public sealed class ChunkExtractor : IChunkExtractor
             ContainingNamespace: ResolveMemberContainingNamespace(symbol),
             ParentSymbolFullyQualifiedName: symbol.ContainingType is null ? null : ToFullyQualifiedName(symbol.ContainingType),
             Accessibility: ResolveAccessibility(symbol.DeclaredAccessibility),
-            Modifiers: BuildModifiers(symbol),
+            Modifiers: modifiers,
             BaseTypeFullyQualifiedName: null,
             ReturnTypeFullyQualifiedName: details.ReturnType,
             ParameterCount: details.ParameterCount,
