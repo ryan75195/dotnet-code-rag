@@ -30,4 +30,12 @@
     <ProjectReference Include="..\..\src\CodeRag.Cli\CodeRag.Cli.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="..\Fixtures\SampleSolution\**\*"
+             Exclude="..\Fixtures\SampleSolution\**\bin\**;..\Fixtures\SampleSolution\**\obj\**">
+      <Link>Fixtures\SampleSolution\%(RecursiveDir)%(FileName)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>
