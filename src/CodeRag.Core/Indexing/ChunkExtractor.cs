@@ -340,12 +340,25 @@ public sealed class ChunkExtractor : IChunkExtractor
             string? args = null;
             if (data.ConstructorArguments.Length > 0 || data.NamedArguments.Length > 0)
             {
-                var positional = data.ConstructorArguments.Select(a => JsonSerializer.Serialize(a.Value)).ToArray();
+                var positional = data.ConstructorArguments.Select(a => JsonSerializer.Serialize(CoerceTypedConstant(a))).ToArray();
                 args = "[" + string.Join(",", positional) + "]";
             }
             builder.Add(new ChunkAttribute(name, args));
         }
         return builder.ToImmutable();
+    }
+
+    private static object? CoerceTypedConstant(TypedConstant constant)
+    {
+        if (constant.IsNull)
+        {
+            return null;
+        }
+        if (constant.Kind == TypedConstantKind.Array)
+        {
+            return constant.Values.Select(CoerceTypedConstant).ToArray();
+        }
+        return constant.Value;
     }
 
     private static ImmutableArray<ChunkGenericTypeParameter> BuildGenerics(INamedTypeSymbol symbol)

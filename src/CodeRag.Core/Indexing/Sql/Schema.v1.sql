@@ -1,4 +1,4 @@
-CREATE TABLE index_metadata (
+CREATE TABLE IF NOT EXISTS index_metadata (
     metadata_id                    INTEGER PRIMARY KEY CHECK (metadata_id = 1),
     schema_version                 INTEGER NOT NULL,
     solution_file_path             TEXT NOT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE index_metadata (
     embedding_vector_dimensions    INTEGER NOT NULL
 );
 
-CREATE TABLE code_chunks (
+CREATE TABLE IF NOT EXISTS code_chunks (
     chunk_id                              INTEGER PRIMARY KEY,
 
     containing_project_name               TEXT NOT NULL,
@@ -50,20 +50,20 @@ CREATE TABLE code_chunks (
     source_text_hash                      TEXT NOT NULL
 );
 
-CREATE TABLE chunk_attributes (
+CREATE TABLE IF NOT EXISTS chunk_attributes (
     attribute_id                          INTEGER PRIMARY KEY,
     chunk_id                              INTEGER NOT NULL REFERENCES code_chunks(chunk_id) ON DELETE CASCADE,
     attribute_fully_qualified_name        TEXT NOT NULL,
     attribute_arguments_json              TEXT NULL
 );
 
-CREATE TABLE chunk_implemented_interfaces (
+CREATE TABLE IF NOT EXISTS chunk_implemented_interfaces (
     chunk_id                              INTEGER NOT NULL REFERENCES code_chunks(chunk_id) ON DELETE CASCADE,
     interface_fully_qualified_name        TEXT NOT NULL,
     PRIMARY KEY (chunk_id, interface_fully_qualified_name)
 );
 
-CREATE TABLE chunk_method_parameters (
+CREATE TABLE IF NOT EXISTS chunk_method_parameters (
     chunk_id                              INTEGER NOT NULL REFERENCES code_chunks(chunk_id) ON DELETE CASCADE,
     parameter_ordinal                     INTEGER NOT NULL,
     parameter_name                        TEXT NOT NULL,
@@ -73,7 +73,7 @@ CREATE TABLE chunk_method_parameters (
     PRIMARY KEY (chunk_id, parameter_ordinal)
 );
 
-CREATE TABLE chunk_generic_type_parameters (
+CREATE TABLE IF NOT EXISTS chunk_generic_type_parameters (
     chunk_id                              INTEGER NOT NULL REFERENCES code_chunks(chunk_id) ON DELETE CASCADE,
     parameter_ordinal                     INTEGER NOT NULL,
     parameter_name                        TEXT NOT NULL,
@@ -81,17 +81,17 @@ CREATE TABLE chunk_generic_type_parameters (
     PRIMARY KEY (chunk_id, parameter_ordinal)
 );
 
-CREATE INDEX idx_chunks_file          ON code_chunks(relative_file_path);
-CREATE INDEX idx_chunks_kind          ON code_chunks(symbol_kind);
-CREATE INDEX idx_chunks_project       ON code_chunks(containing_project_name);
-CREATE INDEX idx_chunks_namespace     ON code_chunks(containing_namespace);
-CREATE INDEX idx_chunks_fqn           ON code_chunks(fully_qualified_symbol_name);
-CREATE INDEX idx_chunks_parent        ON code_chunks(parent_symbol_fully_qualified_name);
-CREATE INDEX idx_chunks_accessibility ON code_chunks(accessibility);
-CREATE INDEX idx_chunks_return_type   ON code_chunks(return_type_fully_qualified_name);
-CREATE INDEX idx_chunks_base_type     ON code_chunks(base_type_fully_qualified_name);
-CREATE INDEX idx_attributes_name      ON chunk_attributes(attribute_fully_qualified_name);
-CREATE INDEX idx_interfaces_name      ON chunk_implemented_interfaces(interface_fully_qualified_name);
-CREATE INDEX idx_params_type          ON chunk_method_parameters(parameter_type_fully_qualified_name);
+CREATE INDEX IF NOT EXISTS idx_chunks_file          ON code_chunks(relative_file_path);
+CREATE INDEX IF NOT EXISTS idx_chunks_kind          ON code_chunks(symbol_kind);
+CREATE INDEX IF NOT EXISTS idx_chunks_project       ON code_chunks(containing_project_name);
+CREATE INDEX IF NOT EXISTS idx_chunks_namespace     ON code_chunks(containing_namespace);
+CREATE INDEX IF NOT EXISTS idx_chunks_fqn           ON code_chunks(fully_qualified_symbol_name);
+CREATE INDEX IF NOT EXISTS idx_chunks_parent        ON code_chunks(parent_symbol_fully_qualified_name);
+CREATE INDEX IF NOT EXISTS idx_chunks_accessibility ON code_chunks(accessibility);
+CREATE INDEX IF NOT EXISTS idx_chunks_return_type   ON code_chunks(return_type_fully_qualified_name);
+CREATE INDEX IF NOT EXISTS idx_chunks_base_type     ON code_chunks(base_type_fully_qualified_name);
+CREATE INDEX IF NOT EXISTS idx_attributes_name      ON chunk_attributes(attribute_fully_qualified_name);
+CREATE INDEX IF NOT EXISTS idx_interfaces_name      ON chunk_implemented_interfaces(interface_fully_qualified_name);
+CREATE INDEX IF NOT EXISTS idx_params_type          ON chunk_method_parameters(parameter_type_fully_qualified_name);
 
-CREATE VIRTUAL TABLE chunk_embeddings USING vec0(embedding float[3072]);
+CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(embedding float[3072]);
