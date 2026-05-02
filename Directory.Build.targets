@@ -1,0 +1,16 @@
+<Project>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'CodeRag.Cli' OR '$(MSBuildProjectName)' == 'CodeRag.Tests.Integration'">
+    <None Include="$(MSBuildThisFileDirectory)external\sqlite-vec\runtimes\win-x64\native\vec0.dll">
+      <Link>runtimes\win-x64\native\vec0.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="$(MSBuildThisFileDirectory)external\sqlite-vec\runtimes\linux-x64\native\vec0.so">
+      <Link>runtimes\linux-x64\native\vec0.so</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="$(MSBuildThisFileDirectory)external\sqlite-vec\runtimes\osx-arm64\native\vec0.dylib">
+      <Link>runtimes\osx-arm64\native\vec0.dylib</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>

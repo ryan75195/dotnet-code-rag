@@ -7,6 +7,7 @@ obj/
 *.dll
 *.exe
 *.pdb
+!external/sqlite-vec/runtimes/**/*.dll
 
 ## IDE
 .vs/
@@ -52,3 +53,6 @@ TestResults/
 deploy/.env
 publish/
 data/
+
+## CodeRag indices
+.coderag/
