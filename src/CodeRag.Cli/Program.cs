@@ -1,4 +1,4 @@
-using CodeRag.Core;
+﻿using CodeRag.Core;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddCoreServices();
