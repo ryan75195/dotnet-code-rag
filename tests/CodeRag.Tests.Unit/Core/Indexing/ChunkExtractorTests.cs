@@ -170,6 +170,44 @@ public class ChunkExtractorTests
         chunks.Should().Contain(c => c.SymbolKind == SymbolKinds.Indexer);
     }
 
+    [Test]
+    public void Should_emit_property_chunk_with_type()
+    {
+        var chunks = ExtractFrom(@"
+            namespace Acme;
+            public class Foo { public int Count { get; init; } }
+        ");
+
+        var prop = chunks.Single(c => c.SymbolKind == SymbolKinds.Property);
+        prop.ReturnTypeFullyQualifiedName.Should().Be("int");
+        prop.SymbolDisplayName.Should().Be("Count");
+    }
+
+    [Test]
+    public void Should_emit_field_chunk_with_type_and_readonly_modifier()
+    {
+        var chunks = ExtractFrom(@"
+            namespace Acme;
+            public class Foo { private readonly int _count = 0; }
+        ");
+
+        var field = chunks.Single(c => c.SymbolKind == SymbolKinds.Field);
+        field.ReturnTypeFullyQualifiedName.Should().Be("int");
+        field.Modifiers.IsReadonly.Should().BeTrue();
+    }
+
+    [Test]
+    public void Should_emit_event_chunk_with_delegate_type()
+    {
+        var chunks = ExtractFrom(@"
+            using System;
+            namespace Acme;
+            public class Foo { public event EventHandler? OnSomething; }
+        ");
+
+        chunks.Should().Contain(c => c.SymbolKind == SymbolKinds.Event && c.SymbolDisplayName == "OnSomething");
+    }
+
     private ImmutableArray<CodeChunk> ExtractFrom(string source)
     {
         var tree = CSharpSyntaxTree.ParseText(source, path: "C:/repo/src/Test.cs");

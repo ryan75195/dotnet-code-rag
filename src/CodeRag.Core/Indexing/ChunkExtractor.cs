@@ -50,12 +50,43 @@ public sealed class ChunkExtractor : IChunkExtractor
             {
                 continue;
             }
+            if (memberDecl is BaseFieldDeclarationSyntax fieldDecl)
+            {
+                ExtractFieldVariables(fieldDecl, semanticModel, syntaxTree, projectName, assemblyName, repositoryRootPath, builder, cancellationToken);
+                continue;
+            }
             var symbol = semanticModel.GetDeclaredSymbol(memberDecl, cancellationToken);
             if (symbol is null || symbol.IsImplicitlyDeclared)
             {
                 continue;
             }
             var chunk = TryBuildMemberChunk(symbol, memberDecl, syntaxTree, projectName, assemblyName, repositoryRootPath);
+            if (chunk is not null)
+            {
+                builder.Add(chunk);
+            }
+        }
+    }
+
+    private void ExtractFieldVariables(
+        BaseFieldDeclarationSyntax fieldDecl,
+        SemanticModel semanticModel,
+        SyntaxTree syntaxTree,
+        string projectName,
+        string assemblyName,
+        string repositoryRootPath,
+        ImmutableArray<CodeChunk>.Builder builder,
+        CancellationToken cancellationToken)
+    {
+        foreach (var variable in fieldDecl.Declaration.Variables)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var symbol = semanticModel.GetDeclaredSymbol(variable, cancellationToken);
+            if (symbol is null || symbol.IsImplicitlyDeclared)
+            {
+                continue;
+            }
+            var chunk = TryBuildMemberChunk(symbol, fieldDecl, syntaxTree, projectName, assemblyName, repositoryRootPath);
             if (chunk is not null)
             {
                 builder.Add(chunk);
