@@ -12,6 +12,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IChunkExtractor, ChunkExtractor>();
         services.AddSingleton<IReconciliationService, ReconciliationService>();
         services.AddTransient<IWorkspaceLoadingService, MsBuildWorkspaceLoadingService>();
+        services.AddSingleton<IGitDiffService, CliGitDiffService>();
         return services;
     }
 }
