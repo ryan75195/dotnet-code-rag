@@ -150,6 +150,7 @@ public class NamingConventionTests
             .SelectMany(a => a.GetTypes())
             .Where(t => t.IsPublic)
             .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+            .Where(m => !m.IsSpecialName)
             .Where(m => m.Name.EndsWith("Async", StringComparison.Ordinal)
                 && !FrameworkAsyncMethods.Contains(m.Name))
             .Select(m => $"  {m.DeclaringType?.Name}.{m.Name}")
