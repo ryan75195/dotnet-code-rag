@@ -14,6 +14,7 @@ public class NamingConventionTests
     [
         "DisposeAsync",
         "ExecuteAsync",
+        "OpenSolutionAsync",
         "StartAsync",
         "StopAsync"
     ];
