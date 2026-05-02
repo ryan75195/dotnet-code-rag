@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 
 namespace CodeRag.Tests.Architecture;
