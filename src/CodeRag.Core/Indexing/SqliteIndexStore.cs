@@ -196,6 +196,58 @@ internal sealed class SqliteIndexStore : IIndexStore
         await ins.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    async Task<IReadOnlyList<StoredChunkSummary>> IIndexStore.GetChunkSummariesForFileAsync(string relativeFilePath, CancellationToken cancellationToken)
+    {
+        const string sql = @"SELECT chunk_id, fully_qualified_symbol_name, source_text_hash
+                              FROM code_chunks WHERE relative_file_path = $path";
+        await using var cmd = Connection.CreateCommand();
+        cmd.Transaction = _transaction;
+        cmd.CommandText = sql;
+        cmd.Parameters.AddWithValue("$path", relativeFilePath);
+        var results = new List<StoredChunkSummary>();
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            results.Add(new StoredChunkSummary(reader.GetInt64(0), reader.GetString(1), reader.GetString(2)));
+        }
+        return results;
+    }
+
+    async Task IIndexStore.DeleteChunkAsync(long chunkId, CancellationToken cancellationToken)
+    {
+        await DeleteEmbeddingRowAsync(chunkId, cancellationToken);
+        await DeleteChildRowsAsync(chunkId, cancellationToken);
+        await DeleteChunkRowAsync(chunkId, cancellationToken);
+    }
+
+    async Task IIndexStore.DeleteChunksForFileAsync(string relativeFilePath, CancellationToken cancellationToken)
+    {
+        IIndexStore self = this;
+        var summaries = await self.GetChunkSummariesForFileAsync(relativeFilePath, cancellationToken);
+        foreach (var summary in summaries)
+        {
+            await self.DeleteChunkAsync(summary.ChunkId, cancellationToken);
+        }
+    }
+
+    private async Task DeleteEmbeddingRowAsync(long chunkId, CancellationToken cancellationToken)
+    {
+        await using var cmd = Connection.CreateCommand();
+        cmd.Transaction = _transaction;
+        cmd.CommandText = "DELETE FROM chunk_embeddings WHERE rowid = $id";
+        cmd.Parameters.AddWithValue("$id", chunkId);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task DeleteChunkRowAsync(long chunkId, CancellationToken cancellationToken)
+    {
+        await using var cmd = Connection.CreateCommand();
+        cmd.Transaction = _transaction;
+        cmd.CommandText = "DELETE FROM code_chunks WHERE chunk_id = $id";
+        cmd.Parameters.AddWithValue("$id", chunkId);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     internal async Task<CodeChunk?> GetChunkByIdAsync(long chunkId, CancellationToken cancellationToken)
     {
         const string sql = @"SELECT containing_project_name, containing_assembly_name, relative_file_path,

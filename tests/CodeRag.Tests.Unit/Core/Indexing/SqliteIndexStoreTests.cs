@@ -124,4 +124,58 @@ public class SqliteIndexStoreTests
 
         (await store.HasEmbeddingAsync(id, CancellationToken.None)).Should().BeTrue();
     }
+
+    [Test]
+    public async Task Should_return_only_chunks_in_that_file()
+    {
+        using var store = new SqliteIndexStore(_dbPath);
+        IIndexStore api = store;
+        await store.OpenAsync(CancellationToken.None);
+
+        var fooChunk = TestChunks.SampleMethod() with { RelativeFilePath = "src/Foo.cs", FullyQualifiedSymbolName = "X.Foo.Run" };
+        var barChunk = TestChunks.SampleMethod() with { RelativeFilePath = "src/Bar.cs", FullyQualifiedSymbolName = "X.Bar.Run" };
+
+        await store.InsertChunkAsync(fooChunk, CancellationToken.None);
+        await store.InsertChunkAsync(barChunk, CancellationToken.None);
+
+        var summaries = await api.GetChunkSummariesForFileAsync("src/Foo.cs", CancellationToken.None);
+
+        summaries.Should().HaveCount(1);
+        summaries[0].FullyQualifiedSymbolName.Should().Be("X.Foo.Run");
+    }
+
+    [Test]
+    public async Task Should_remove_row_and_cascade_children()
+    {
+        using var store = new SqliteIndexStore(_dbPath);
+        IIndexStore api = store;
+        await store.OpenAsync(CancellationToken.None);
+
+        var chunk = TestChunks.SampleMethod();
+        long id = await store.InsertChunkAsync(chunk, CancellationToken.None);
+        await store.UpsertEmbeddingAsync(id, new float[3072], CancellationToken.None);
+
+        await api.DeleteChunkAsync(id, CancellationToken.None);
+
+        var summaries = await api.GetChunkSummariesForFileAsync(chunk.RelativeFilePath, CancellationToken.None);
+        summaries.Should().BeEmpty();
+        (await store.HasEmbeddingAsync(id, CancellationToken.None)).Should().BeFalse();
+    }
+
+    [Test]
+    public async Task Should_remove_every_chunk_in_that_file()
+    {
+        using var store = new SqliteIndexStore(_dbPath);
+        IIndexStore api = store;
+        await store.OpenAsync(CancellationToken.None);
+
+        var path = "src/Foo.cs";
+        await store.InsertChunkAsync(TestChunks.SampleMethod() with { RelativeFilePath = path, FullyQualifiedSymbolName = "X.Foo.Run1" }, CancellationToken.None);
+        await store.InsertChunkAsync(TestChunks.SampleMethod() with { RelativeFilePath = path, FullyQualifiedSymbolName = "X.Foo.Run2" }, CancellationToken.None);
+
+        await api.DeleteChunksForFileAsync(path, CancellationToken.None);
+
+        var summaries = await api.GetChunkSummariesForFileAsync(path, CancellationToken.None);
+        summaries.Should().BeEmpty();
+    }
 }
