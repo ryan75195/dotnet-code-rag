@@ -19,6 +19,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<Func<string, IIndexStore>>(_ => path => new SqliteIndexStore(path));
         services.AddTransient<IndexingDependencies>();
         services.AddTransient<IIndexingService, IndexingService>();
+        services.AddTransient<IQueryService, QueryService>();
         return services;
     }
 }

@@ -583,4 +583,77 @@ internal sealed class SqliteIndexStore : IIndexStore
         }
         return list;
     }
+
+    public async Task<IReadOnlyList<QueryHit>> Search(
+        ReadOnlyMemory<float> queryVector,
+        QueryFilters filters,
+        int topK,
+        CancellationToken cancellationToken)
+    {
+        var oversample = Math.Max(topK * 20, 200);
+        await using var cmd = Connection.CreateCommand();
+        cmd.Transaction = _transaction;
+        cmd.CommandText = SearchSql;
+        BindSearchParameters(cmd, queryVector, filters, topK, oversample);
+        return await ReadSearchResults(cmd, cancellationToken);
+    }
+
+    private static void BindSearchParameters(
+        SqliteCommand cmd,
+        ReadOnlyMemory<float> queryVector,
+        QueryFilters filters,
+        int topK,
+        int oversample)
+    {
+        cmd.Parameters.AddWithValue("$query_vector", FloatArrayToBlob(queryVector.Span));
+        cmd.Parameters.AddWithValue("$oversample", oversample);
+        cmd.Parameters.AddWithValue("$top_k", topK);
+        cmd.Parameters.AddWithValue("$symbol_kind", (object?)filters.SymbolKind ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$project", (object?)filters.ContainingProjectName ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$namespace", (object?)filters.ContainingNamespace ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$is_async", filters.IsAsync.HasValue ? (filters.IsAsync.Value ? 1 : 0) : DBNull.Value);
+    }
+
+    private static async Task<IReadOnlyList<QueryHit>> ReadSearchResults(SqliteCommand cmd, CancellationToken cancellationToken)
+    {
+        var results = new List<QueryHit>();
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            results.Add(new QueryHit(
+                ChunkId: reader.GetInt64(0),
+                RelativeFilePath: reader.GetString(1),
+                LineStart: reader.GetInt32(2),
+                LineEnd: reader.GetInt32(3),
+                FullyQualifiedSymbolName: reader.GetString(4),
+                SymbolKind: reader.GetString(5),
+                Distance: reader.GetDouble(6),
+                SourceText: reader.GetString(7)));
+        }
+        return results;
+    }
+
+    private const string SearchSql = @"WITH candidates AS (
+    SELECT rowid, distance
+    FROM chunk_embeddings
+    WHERE embedding MATCH $query_vector
+    ORDER BY distance
+    LIMIT $oversample
+)
+SELECT c.chunk_id,
+       c.relative_file_path,
+       c.start_line_number,
+       c.end_line_number,
+       c.fully_qualified_symbol_name,
+       c.symbol_kind,
+       cand.distance,
+       c.source_text
+FROM candidates cand
+JOIN code_chunks c ON c.chunk_id = cand.rowid
+WHERE ($symbol_kind IS NULL OR c.symbol_kind = $symbol_kind)
+  AND ($project IS NULL OR c.containing_project_name = $project)
+  AND ($namespace IS NULL OR c.containing_namespace = $namespace)
+  AND ($is_async IS NULL OR c.is_async = $is_async)
+ORDER BY cand.distance
+LIMIT $top_k";
 }
