@@ -17,4 +17,10 @@ internal interface IIndexStore : IDisposable
     Task<IReadOnlyList<StoredChunkSummary>> GetChunkSummariesForFileAsync(string relativeFilePath, CancellationToken cancellationToken);
     Task DeleteChunkAsync(long chunkId, CancellationToken cancellationToken);
     Task DeleteChunksForFileAsync(string relativeFilePath, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<QueryHit>> Search(
+        ReadOnlyMemory<float> queryVector,
+        QueryFilters filters,
+        int topK,
+        CancellationToken cancellationToken);
 }
