@@ -44,7 +44,7 @@ public class ServiceShapeTests
     [Test]
     public void Should_inject_dependencies_as_interfaces_not_concrete_types()
     {
-        var assemblies = new[] { TestHelpers.CoreAssembly, TestHelpers.CliAssembly };
+        var assemblies = new[] { TestHelpers.CoreAssembly, TestHelpers.CliAssembly, TestHelpers.McpAssembly };
 
         var serviceClasses = assemblies
             .SelectMany(a => a.GetTypes())

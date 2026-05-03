@@ -7,6 +7,7 @@ internal static class TestHelpers
 {
     public static Assembly CoreAssembly => typeof(Core.AssemblyMarker).Assembly;
     public static Assembly CliAssembly => typeof(Cli.AssemblyMarker).Assembly;
+    public static Assembly McpAssembly => typeof(Mcp.AssemblyMarker).Assembly;
 
     public static readonly Assembly[] TestAssemblies =
     [

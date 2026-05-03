@@ -16,7 +16,7 @@ public class CodeStructureTests
     [Test]
     public void Should_have_test_fixture_for_every_public_class()
     {
-        var assemblies = new[] { TestHelpers.CoreAssembly, TestHelpers.CliAssembly };
+        var assemblies = new[] { TestHelpers.CoreAssembly, TestHelpers.CliAssembly, TestHelpers.McpAssembly };
 
         var testFixtureNames = TestHelpers.TestAssemblies
             .SelectMany(a => a.GetTypes())
@@ -52,10 +52,11 @@ public class CodeStructureTests
         var sourceAssemblyMap = new Dictionary<string, string>
         {
             ["CodeRag.Core"] = ".Core",
-            ["CodeRag.Cli"] = ".Cli"
+            ["CodeRag.Cli"] = ".Cli",
+            ["CodeRag.Mcp"] = ".Mcp"
         };
 
-        var sourceAssemblies = new[] { TestHelpers.CoreAssembly, TestHelpers.CliAssembly };
+        var sourceAssemblies = new[] { TestHelpers.CoreAssembly, TestHelpers.CliAssembly, TestHelpers.McpAssembly };
 
         var sourceClassToAssembly = new Dictionary<string, string>();
         foreach (var assembly in sourceAssemblies)
@@ -109,7 +110,7 @@ public class CodeStructureTests
     [Test]
     public void Should_not_return_arrays_from_public_methods()
     {
-        var assemblies = new[] { TestHelpers.CoreAssembly, TestHelpers.CliAssembly };
+        var assemblies = new[] { TestHelpers.CoreAssembly, TestHelpers.CliAssembly, TestHelpers.McpAssembly };
 
         var violations = assemblies
             .SelectMany(a => a.GetTypes())
@@ -144,7 +145,8 @@ public class CodeStructureTests
         var srcDirs = new[]
         {
             Path.Combine(solutionRoot, "src", "CodeRag.Core"),
-            Path.Combine(solutionRoot, "src", "CodeRag.Cli")
+            Path.Combine(solutionRoot, "src", "CodeRag.Cli"),
+            Path.Combine(solutionRoot, "src", "CodeRag.Mcp")
         };
 
         var violations = new List<string>();

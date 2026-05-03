@@ -180,4 +180,116 @@ public class SqliteIndexStoreTests
         var summaries = await api.GetChunkSummariesForFileAsync(path, CancellationToken.None);
         summaries.Should().BeEmpty();
     }
+
+    [Test]
+    public async Task Should_find_symbol_by_short_name_or_fqn()
+    {
+        using var store = new SqliteIndexStore(_dbPath, TestVectorDimensions);
+        IIndexStore api = store;
+        await store.OpenAsync(CancellationToken.None);
+
+        var inner = TestChunks.SampleMethod() with
+        {
+            FullyQualifiedSymbolName = "Game.Inner.Foo.Run()",
+            SymbolDisplayName = "Run",
+        };
+        var outer = TestChunks.SampleMethod() with
+        {
+            FullyQualifiedSymbolName = "Game.Outer.Foo.Run()",
+            SymbolDisplayName = "Run",
+        };
+        await store.InsertChunkAsync(inner, CancellationToken.None);
+        await store.InsertChunkAsync(outer, CancellationToken.None);
+
+        var byShort = await api.FindSymbolByName("Run", null, 10, CancellationToken.None);
+        byShort.Should().HaveCount(2);
+
+        var byFqn = await api.FindSymbolByName("Game.Inner.Foo.Run()", null, 10, CancellationToken.None);
+        byFqn.Should().ContainSingle().Which.FullyQualifiedSymbolName.Should().Be("Game.Inner.Foo.Run()");
+    }
+
+    [Test]
+    public async Task Should_filter_find_symbol_by_kind()
+    {
+        using var store = new SqliteIndexStore(_dbPath, TestVectorDimensions);
+        IIndexStore api = store;
+        await store.OpenAsync(CancellationToken.None);
+
+        var method = TestChunks.SampleMethod() with
+        {
+            FullyQualifiedSymbolName = "X.Y.DoThing()",
+            SymbolDisplayName = "DoThing",
+            SymbolKind = SymbolKinds.Method,
+        };
+        var classChunk = TestChunks.SampleMethod() with
+        {
+            FullyQualifiedSymbolName = "X.Y.DoThing",
+            SymbolDisplayName = "DoThing",
+            SymbolKind = SymbolKinds.Class,
+        };
+        await store.InsertChunkAsync(method, CancellationToken.None);
+        await store.InsertChunkAsync(classChunk, CancellationToken.None);
+
+        var hits = await api.FindSymbolByName("DoThing", SymbolKinds.Class, 10, CancellationToken.None);
+
+        hits.Should().ContainSingle()
+            .Which.SymbolKind.Should().Be(SymbolKinds.Class);
+    }
+
+    [Test]
+    public async Task Should_list_chunks_implementing_interface()
+    {
+        using var store = new SqliteIndexStore(_dbPath, TestVectorDimensions);
+        IIndexStore api = store;
+        await store.OpenAsync(CancellationToken.None);
+
+        var implementer = TestChunks.SampleMethod() with
+        {
+            FullyQualifiedSymbolName = "X.MyService",
+            SymbolDisplayName = "MyService",
+            SymbolKind = SymbolKinds.Class,
+            ImplementedInterfaceFullyQualifiedNames = ImmutableArray.Create("X.IMyService"),
+        };
+        var unrelated = TestChunks.SampleMethod() with
+        {
+            FullyQualifiedSymbolName = "X.OtherService",
+            SymbolDisplayName = "OtherService",
+            SymbolKind = SymbolKinds.Class,
+        };
+        await store.InsertChunkAsync(implementer, CancellationToken.None);
+        await store.InsertChunkAsync(unrelated, CancellationToken.None);
+
+        var hits = await api.ListImplementations("X.IMyService", 10, CancellationToken.None);
+
+        hits.Should().ContainSingle()
+            .Which.FullyQualifiedSymbolName.Should().Be("X.MyService");
+    }
+
+    [Test]
+    public async Task Should_list_chunks_decorated_with_attribute()
+    {
+        using var store = new SqliteIndexStore(_dbPath, TestVectorDimensions);
+        IIndexStore api = store;
+        await store.OpenAsync(CancellationToken.None);
+
+        var decorated = TestChunks.SampleMethod() with
+        {
+            FullyQualifiedSymbolName = "X.Y.OldThing",
+            SymbolDisplayName = "OldThing",
+            Attributes = ImmutableArray.Create(new ChunkAttribute("System.ObsoleteAttribute", null)),
+        };
+        var plain = TestChunks.SampleMethod() with
+        {
+            FullyQualifiedSymbolName = "X.Y.NewThing",
+            SymbolDisplayName = "NewThing",
+            Attributes = ImmutableArray<ChunkAttribute>.Empty,
+        };
+        await store.InsertChunkAsync(decorated, CancellationToken.None);
+        await store.InsertChunkAsync(plain, CancellationToken.None);
+
+        var hits = await api.ListAttributedWith("System.ObsoleteAttribute", 10, CancellationToken.None);
+
+        hits.Should().ContainSingle()
+            .Which.FullyQualifiedSymbolName.Should().Be("X.Y.OldThing");
+    }
 }

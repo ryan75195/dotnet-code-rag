@@ -29,6 +29,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IndexingDependencies>();
         services.AddTransient<IIndexingService, IndexingService>();
         services.AddTransient<IQueryService, QueryService>();
+        services.AddTransient<ICodeIndexLookupService, CodeIndexLookupService>();
         return services;
     }
 
