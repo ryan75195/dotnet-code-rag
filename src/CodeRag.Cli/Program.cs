@@ -30,6 +30,13 @@ var kindOpt = new Option<string?>("--kind", "Filter by symbol_kind (e.g. method,
 var projectOpt = new Option<string?>("--project", "Filter by containing project name.");
 var nsOpt = new Option<string?>("--namespace", "Filter by containing namespace.");
 var asyncOpt = new Option<bool?>("--is-async", "Filter to async methods only.");
+var accessibilityOpt = new Option<string?>("--accessibility", "Filter by accessibility (public, internal, protected, ...).");
+var hasAttrOpt = new Option<string?>("--has-attribute", "Filter chunks that carry the given attribute (fully qualified).");
+var implementsOpt = new Option<string?>("--implements", "Filter chunks implementing the given interface (fully qualified).");
+var returnTypeContainsOpt = new Option<string?>("--return-type-contains", "Filter chunks whose return type contains the given substring.");
+var excludeTestsOpt = new Option<bool>("--exclude-tests", () => false, "Exclude chunks in test namespaces.");
+var excludeNsOpt = new Option<string?>("--exclude-namespace", "Exclude chunks whose namespace contains the given substring.");
+var maxDistanceOpt = new Option<double?>("--max-distance", "Drop hits with KNN distance above this value.");
 var formatOpt = new Option<string>("--format", () => "text", "Output format: text or json.");
 
 var queryCmd = new Command("query", "Search the code index for chunks similar to a natural-language query.");
@@ -40,19 +47,34 @@ queryCmd.AddOption(kindOpt);
 queryCmd.AddOption(projectOpt);
 queryCmd.AddOption(nsOpt);
 queryCmd.AddOption(asyncOpt);
+queryCmd.AddOption(accessibilityOpt);
+queryCmd.AddOption(hasAttrOpt);
+queryCmd.AddOption(implementsOpt);
+queryCmd.AddOption(returnTypeContainsOpt);
+queryCmd.AddOption(excludeTestsOpt);
+queryCmd.AddOption(excludeNsOpt);
+queryCmd.AddOption(maxDistanceOpt);
 queryCmd.AddOption(formatOpt);
 queryCmd.SetHandler(async (InvocationContext ctx) =>
 {
-    var text = ctx.ParseResult.GetValueForArgument(textArg);
-    var db = ctx.ParseResult.GetValueForOption(dbOpt);
-    var topK = ctx.ParseResult.GetValueForOption(topKOpt);
-    var kind = ctx.ParseResult.GetValueForOption(kindOpt);
-    var project = ctx.ParseResult.GetValueForOption(projectOpt);
-    var ns = ctx.ParseResult.GetValueForOption(nsOpt);
-    var isAsync = ctx.ParseResult.GetValueForOption(asyncOpt);
-    var format = ctx.ParseResult.GetValueForOption(formatOpt) ?? "text";
+    var options = new QueryCommandOptions(
+        Text: ctx.ParseResult.GetValueForArgument(textArg),
+        DbPath: ctx.ParseResult.GetValueForOption(dbOpt)?.FullName,
+        TopK: ctx.ParseResult.GetValueForOption(topKOpt),
+        SymbolKind: ctx.ParseResult.GetValueForOption(kindOpt),
+        Project: ctx.ParseResult.GetValueForOption(projectOpt),
+        ContainingNamespace: ctx.ParseResult.GetValueForOption(nsOpt),
+        IsAsync: ctx.ParseResult.GetValueForOption(asyncOpt),
+        Accessibility: ctx.ParseResult.GetValueForOption(accessibilityOpt),
+        HasAttribute: ctx.ParseResult.GetValueForOption(hasAttrOpt),
+        Implements: ctx.ParseResult.GetValueForOption(implementsOpt),
+        ReturnTypeContains: ctx.ParseResult.GetValueForOption(returnTypeContainsOpt),
+        ExcludeTests: ctx.ParseResult.GetValueForOption(excludeTestsOpt),
+        ExcludeNamespace: ctx.ParseResult.GetValueForOption(excludeNsOpt),
+        MaxDistance: ctx.ParseResult.GetValueForOption(maxDistanceOpt),
+        Format: ctx.ParseResult.GetValueForOption(formatOpt) ?? "text");
     var command = host.Services.GetRequiredService<QueryCommand>();
-    ctx.ExitCode = await command.ExecuteAsync(text, db?.FullName, topK, kind, project, ns, isAsync, format, ctx.GetCancellationToken());
+    ctx.ExitCode = await command.ExecuteAsync(options, ctx.GetCancellationToken());
 });
 
 var rootCommand = new RootCommand("CodeRag — code RAG indexer");

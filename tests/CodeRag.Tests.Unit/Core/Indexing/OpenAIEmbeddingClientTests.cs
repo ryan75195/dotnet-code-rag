@@ -11,5 +11,6 @@ public class OpenAIEmbeddingClientTests
     {
         var client = new OpenAIEmbeddingClient("sk-fake");
         client.Should().NotBeNull();
+        client.VectorDimensions.Should().Be(OpenAIEmbeddingOptions.VectorDimensions);
     }
 }

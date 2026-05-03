@@ -7,6 +7,8 @@ namespace CodeRag.Tests.Unit.Core.Indexing;
 [TestFixture]
 public class SqliteIndexStoreTests
 {
+    private const int TestVectorDimensions = 1024;
+
     private string _dbPath = null!;
 
     [SetUp]
@@ -27,7 +29,7 @@ public class SqliteIndexStoreTests
     [Test]
     public async Task Should_create_schema_when_file_is_new()
     {
-        using var store = new SqliteIndexStore(_dbPath);
+        using var store = new SqliteIndexStore(_dbPath, TestVectorDimensions);
         await store.OpenAsync(CancellationToken.None);
 
         var metadata = await store.TryGetMetadataAsync(CancellationToken.None);
@@ -39,17 +41,17 @@ public class SqliteIndexStoreTests
     [Test]
     public async Task Should_round_trip_metadata()
     {
-        using var store = new SqliteIndexStore(_dbPath);
+        using var store = new SqliteIndexStore(_dbPath, TestVectorDimensions);
         await store.OpenAsync(CancellationToken.None);
 
         var written = new IndexMetadata(
-            SchemaVersion: 1,
+            SchemaVersion: 2,
             SolutionFilePath: "C:\\code\\foo.sln",
             RepositoryRootPath: "C:\\code",
             IndexedAtCommitSha: "abc123",
             IndexedAtUtc: new DateTimeOffset(2026, 5, 2, 12, 0, 0, TimeSpan.Zero),
-            EmbeddingModelName: "text-embedding-3-large",
-            EmbeddingVectorDimensions: 3072);
+            EmbeddingModelName: "voyage-code-3",
+            EmbeddingVectorDimensions: TestVectorDimensions);
         await store.SetMetadataAsync(written, CancellationToken.None);
 
         var read = await store.TryGetMetadataAsync(CancellationToken.None);
@@ -59,14 +61,14 @@ public class SqliteIndexStoreTests
     [Test]
     public async Task Should_throw_when_schema_version_does_not_match()
     {
-        using (var store = new SqliteIndexStore(_dbPath))
+        using (var store = new SqliteIndexStore(_dbPath, TestVectorDimensions))
         {
             await store.OpenAsync(CancellationToken.None);
-            var meta = new IndexMetadata(99, "x", "x", "x", DateTimeOffset.UtcNow, "x", 3072);
+            var meta = new IndexMetadata(99, "x", "x", "x", DateTimeOffset.UtcNow, "x", TestVectorDimensions);
             await store.SetMetadataAsync(meta, CancellationToken.None);
         }
 
-        using var reopened = new SqliteIndexStore(_dbPath);
+        using var reopened = new SqliteIndexStore(_dbPath, TestVectorDimensions);
         var act = async () => await reopened.OpenAsync(CancellationToken.None);
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*schema version*99*");
@@ -75,7 +77,7 @@ public class SqliteIndexStoreTests
     [Test]
     public async Task Should_persist_all_columns_and_child_rows()
     {
-        using var store = new SqliteIndexStore(_dbPath);
+        using var store = new SqliteIndexStore(_dbPath, TestVectorDimensions);
         await store.OpenAsync(CancellationToken.None);
 
         var chunk = TestChunks.SampleMethod();
@@ -89,7 +91,7 @@ public class SqliteIndexStoreTests
     [Test]
     public async Task Should_replace_child_rows()
     {
-        using var store = new SqliteIndexStore(_dbPath);
+        using var store = new SqliteIndexStore(_dbPath, TestVectorDimensions);
         await store.OpenAsync(CancellationToken.None);
 
         var original = TestChunks.SampleMethod();
@@ -109,13 +111,13 @@ public class SqliteIndexStoreTests
     [Test]
     public async Task Should_persist_vector_keyed_by_chunk_id()
     {
-        using var store = new SqliteIndexStore(_dbPath);
+        using var store = new SqliteIndexStore(_dbPath, TestVectorDimensions);
         await store.OpenAsync(CancellationToken.None);
 
         var chunk = TestChunks.SampleMethod();
         long id = await store.InsertChunkAsync(chunk, CancellationToken.None);
 
-        var vector = new float[3072];
+        var vector = new float[TestVectorDimensions];
         for (int i = 0; i < vector.Length; i++)
         {
             vector[i] = i * 0.001f;
@@ -128,7 +130,7 @@ public class SqliteIndexStoreTests
     [Test]
     public async Task Should_return_only_chunks_in_that_file()
     {
-        using var store = new SqliteIndexStore(_dbPath);
+        using var store = new SqliteIndexStore(_dbPath, TestVectorDimensions);
         IIndexStore api = store;
         await store.OpenAsync(CancellationToken.None);
 
@@ -147,13 +149,13 @@ public class SqliteIndexStoreTests
     [Test]
     public async Task Should_remove_row_and_cascade_children()
     {
-        using var store = new SqliteIndexStore(_dbPath);
+        using var store = new SqliteIndexStore(_dbPath, TestVectorDimensions);
         IIndexStore api = store;
         await store.OpenAsync(CancellationToken.None);
 
         var chunk = TestChunks.SampleMethod();
         long id = await store.InsertChunkAsync(chunk, CancellationToken.None);
-        await store.UpsertEmbeddingAsync(id, new float[3072], CancellationToken.None);
+        await store.UpsertEmbeddingAsync(id, new float[TestVectorDimensions], CancellationToken.None);
 
         await api.DeleteChunkAsync(id, CancellationToken.None);
 
@@ -165,7 +167,7 @@ public class SqliteIndexStoreTests
     [Test]
     public async Task Should_remove_every_chunk_in_that_file()
     {
-        using var store = new SqliteIndexStore(_dbPath);
+        using var store = new SqliteIndexStore(_dbPath, TestVectorDimensions);
         IIndexStore api = store;
         await store.OpenAsync(CancellationToken.None);
 

@@ -20,6 +20,7 @@ public sealed record CodeChunk(
     string? ReturnTypeFullyQualifiedName,
     int? ParameterCount,
     string? DocumentationCommentXml,
+    string? XmlDocSummary,
     string SourceText,
     string SourceTextHash,
     ImmutableArray<ChunkAttribute> Attributes,

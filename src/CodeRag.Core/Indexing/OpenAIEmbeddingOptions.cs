@@ -1,6 +1,6 @@
 ﻿namespace CodeRag.Core.Indexing;
 
-public sealed record EmbeddingOptions
+public sealed record OpenAIEmbeddingOptions
 {
     public const string ModelName = "text-embedding-3-large";
     public const int VectorDimensions = 3072;

@@ -1,20 +1,27 @@
 ﻿using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Text;
 using Microsoft.Data.Sqlite;
 
 namespace CodeRag.Core.Indexing;
 
 internal sealed class SqliteIndexStore : IIndexStore
 {
-    private const int CurrentSchemaVersion = 1;
+    private const int CurrentSchemaVersion = 2;
+    private const double RrfK = 60.0;
+    private const int OversampleFloor = 200;
+    private const int Bm25Limit = 200;
+
     private readonly string _databasePath;
+    private readonly int _embeddingVectorDimensions;
     private SqliteConnection? _connection;
     private SqliteTransaction? _transaction;
 
-    public SqliteIndexStore(string databasePath)
+    public SqliteIndexStore(string databasePath, int embeddingVectorDimensions)
     {
         _databasePath = databasePath;
+        _embeddingVectorDimensions = embeddingVectorDimensions;
     }
 
     internal SqliteConnection Connection => _connection
@@ -133,11 +140,11 @@ internal sealed class SqliteIndexStore : IIndexStore
              is_static, is_abstract, is_sealed, is_virtual, is_override, is_async,
              is_partial, is_readonly, is_extern, is_unsafe, is_extension_method, is_generic,
              base_type_fully_qualified_name, return_type_fully_qualified_name, parameter_count,
-             documentation_comment_xml, source_text, source_text_hash)
+             documentation_comment_xml, xml_doc_summary, source_text, source_text_hash)
             VALUES ($proj, $asm, $path, $sline, $eline,
                     $kind, $disp, $sig, $fqn, $ns, $parent,
                     $acc, $st, $ab, $sl, $vi, $ov, $as, $pa, $rd, $ex, $un, $em, $ge,
-                    $base, $ret, $pc, $doc, $src, $hash)
+                    $base, $ret, $pc, $doc, $xsum, $src, $hash)
             RETURNING chunk_id";
         await using var cmd = Connection.CreateCommand();
         cmd.Transaction = _transaction;
@@ -163,7 +170,8 @@ internal sealed class SqliteIndexStore : IIndexStore
             is_extern = $ex, is_unsafe = $un, is_extension_method = $em, is_generic = $ge,
             base_type_fully_qualified_name = $base,
             return_type_fully_qualified_name = $ret, parameter_count = $pc,
-            documentation_comment_xml = $doc, source_text = $src, source_text_hash = $hash
+            documentation_comment_xml = $doc, xml_doc_summary = $xsum,
+            source_text = $src, source_text_hash = $hash
             WHERE chunk_id = $id";
         await using var cmd = Connection.CreateCommand();
         cmd.Transaction = _transaction;
@@ -196,6 +204,18 @@ internal sealed class SqliteIndexStore : IIndexStore
         await ins.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    async Task IIndexStore.UpsertFtsContentAsync(long chunkId, string content, CancellationToken cancellationToken)
+    {
+        await DeleteFtsRowAsync(chunkId, cancellationToken);
+        const string insertSql = "INSERT INTO chunk_text_index(chunk_id, content) VALUES ($id, $content)";
+        await using var ins = Connection.CreateCommand();
+        ins.Transaction = _transaction;
+        ins.CommandText = insertSql;
+        ins.Parameters.AddWithValue("$id", chunkId);
+        ins.Parameters.AddWithValue("$content", content);
+        await ins.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     async Task<IReadOnlyList<StoredChunkSummary>> IIndexStore.GetChunkSummariesForFileAsync(string relativeFilePath, CancellationToken cancellationToken)
     {
         const string sql = @"SELECT chunk_id, fully_qualified_symbol_name, source_text_hash
@@ -216,6 +236,7 @@ internal sealed class SqliteIndexStore : IIndexStore
     async Task IIndexStore.DeleteChunkAsync(long chunkId, CancellationToken cancellationToken)
     {
         await DeleteEmbeddingRowAsync(chunkId, cancellationToken);
+        await DeleteFtsRowAsync(chunkId, cancellationToken);
         await DeleteChildRowsAsync(chunkId, cancellationToken);
         await DeleteChunkRowAsync(chunkId, cancellationToken);
     }
@@ -239,6 +260,15 @@ internal sealed class SqliteIndexStore : IIndexStore
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private async Task DeleteFtsRowAsync(long chunkId, CancellationToken cancellationToken)
+    {
+        await using var cmd = Connection.CreateCommand();
+        cmd.Transaction = _transaction;
+        cmd.CommandText = "DELETE FROM chunk_text_index WHERE chunk_id = $id";
+        cmd.Parameters.AddWithValue("$id", chunkId);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private async Task DeleteChunkRowAsync(long chunkId, CancellationToken cancellationToken)
     {
         await using var cmd = Connection.CreateCommand();
@@ -256,7 +286,7 @@ internal sealed class SqliteIndexStore : IIndexStore
             accessibility, is_static, is_abstract, is_sealed, is_virtual, is_override, is_async,
             is_partial, is_readonly, is_extern, is_unsafe, is_extension_method, is_generic,
             base_type_fully_qualified_name, return_type_fully_qualified_name, parameter_count,
-            documentation_comment_xml, source_text, source_text_hash
+            documentation_comment_xml, xml_doc_summary, source_text, source_text_hash
             FROM code_chunks WHERE chunk_id = $id";
         await using var cmd = Connection.CreateCommand();
         cmd.Transaction = _transaction;
@@ -271,14 +301,14 @@ internal sealed class SqliteIndexStore : IIndexStore
         return await ProjectChunkAsync(chunkId, reader, cancellationToken);
     }
 
-    private async Task<CodeChunk> ProjectChunkAsync(long chunkId, Microsoft.Data.Sqlite.SqliteDataReader reader, CancellationToken cancellationToken)
+    private async Task<CodeChunk> ProjectChunkAsync(long chunkId, SqliteDataReader reader, CancellationToken cancellationToken)
     {
         var modifiers = ReadModifiersFromReader(reader);
         var children = await ReadChildCollectionsAsync(chunkId, cancellationToken);
         return await BuildChunkAsync(reader, modifiers, children, cancellationToken);
     }
 
-    private static ChunkModifiers ReadModifiersFromReader(Microsoft.Data.Sqlite.SqliteDataReader reader)
+    private static ChunkModifiers ReadModifiersFromReader(SqliteDataReader reader)
     {
         return new ChunkModifiers(
             IsStatic: reader.GetInt64(12) != 0,
@@ -317,7 +347,7 @@ internal sealed class SqliteIndexStore : IIndexStore
     }
 
     private static async Task<CodeChunk> BuildChunkAsync(
-        Microsoft.Data.Sqlite.SqliteDataReader reader,
+        SqliteDataReader reader,
         ChunkModifiers modifiers,
         ChunkChildCollections children,
         CancellationToken cancellationToken)
@@ -340,8 +370,9 @@ internal sealed class SqliteIndexStore : IIndexStore
             ReturnTypeFullyQualifiedName: await reader.IsDBNullAsync(25, cancellationToken) ? null : reader.GetString(25),
             ParameterCount: await reader.IsDBNullAsync(26, cancellationToken) ? null : reader.GetInt32(26),
             DocumentationCommentXml: await reader.IsDBNullAsync(27, cancellationToken) ? null : reader.GetString(27),
-            SourceText: reader.GetString(28),
-            SourceTextHash: reader.GetString(29),
+            XmlDocSummary: await reader.IsDBNullAsync(28, cancellationToken) ? null : reader.GetString(28),
+            SourceText: reader.GetString(29),
+            SourceTextHash: reader.GetString(30),
             Attributes: children.Attributes.ToImmutableArray(),
             ImplementedInterfaceFullyQualifiedNames: children.Interfaces.ToImmutableArray(),
             Parameters: children.Parameters.ToImmutableArray(),
@@ -384,14 +415,18 @@ internal sealed class SqliteIndexStore : IIndexStore
         var existing = await TryGetSchemaVersionAsync(cancellationToken);
         if (existing is null)
         {
-            await ApplySchemaAsync("Schema.v1.sql", cancellationToken);
+            await ApplySchemaAsync("Schema.v2.sql", cancellationToken);
             return;
         }
         if (existing.Value != CurrentSchemaVersion)
         {
             throw new InvalidOperationException(
-                $"index_metadata.schema version {existing.Value} does not match expected version {CurrentSchemaVersion}. " +
-                "Delete the index file and re-run; v1 has no online migration.");
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Index at {0} uses schema version {1}. This build expects schema version {2}. Delete the file and re-run `coderag index ...` to migrate.",
+                    _databasePath,
+                    existing.Value,
+                    CurrentSchemaVersion));
         }
     }
 
@@ -423,6 +458,7 @@ internal sealed class SqliteIndexStore : IIndexStore
             ?? throw new InvalidOperationException($"Embedded SQL resource not found: {fullName}");
         using var reader = new StreamReader(stream);
         var sql = await reader.ReadToEndAsync(cancellationToken);
+        sql = sql.Replace("{EMBEDDING_DIM}", _embeddingVectorDimensions.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = sql;
         await cmd.ExecuteNonQueryAsync(cancellationToken);
@@ -469,6 +505,7 @@ internal sealed class SqliteIndexStore : IIndexStore
         cmd.Parameters.AddWithValue("$ret", (object?)c.ReturnTypeFullyQualifiedName ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$pc", c.ParameterCount.HasValue ? c.ParameterCount.Value : DBNull.Value);
         cmd.Parameters.AddWithValue("$doc", (object?)c.DocumentationCommentXml ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$xsum", (object?)c.XmlDocSummary ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$src", c.SourceText);
         cmd.Parameters.AddWithValue("$hash", c.SourceTextHash);
     }
@@ -569,7 +606,7 @@ internal sealed class SqliteIndexStore : IIndexStore
         "Security",
         "CA2100:Review SQL queries for security vulnerabilities",
         Justification = "SQL is provided by internal callers; no user input flows in.")]
-    private async Task<List<T>> ReadChildAsync<T>(long chunkId, string sql, Func<Microsoft.Data.Sqlite.SqliteDataReader, T> map, CancellationToken cancellationToken)
+    private async Task<List<T>> ReadChildAsync<T>(long chunkId, string sql, Func<SqliteDataReader, T> map, CancellationToken cancellationToken)
     {
         await using var cmd = Connection.CreateCommand();
         cmd.Transaction = _transaction;
@@ -579,81 +616,218 @@ internal sealed class SqliteIndexStore : IIndexStore
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            list.Add(map((Microsoft.Data.Sqlite.SqliteDataReader)reader));
+            list.Add(map((SqliteDataReader)reader));
         }
         return list;
     }
 
     public async Task<IReadOnlyList<QueryHit>> Search(
         ReadOnlyMemory<float> queryVector,
+        string queryText,
         QueryFilters filters,
         int topK,
         CancellationToken cancellationToken)
     {
-        var oversample = Math.Max(topK * 20, 200);
+        int oversample = Math.Max(topK * 20, OversampleFloor);
+        var knn = await RunKnnAsync(queryVector, oversample, cancellationToken);
+        var bm25 = await RunBm25Async(queryText, cancellationToken);
+        var fused = FuseResults(knn, bm25);
+        return await ProjectFusedHitsAsync(fused, filters, topK, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<KnnRanked>> RunKnnAsync(ReadOnlyMemory<float> queryVector, int oversample, CancellationToken cancellationToken)
+    {
+        const string sql = @"SELECT rowid, distance
+            FROM chunk_embeddings
+            WHERE embedding MATCH $query_vector
+            ORDER BY distance
+            LIMIT $oversample";
         await using var cmd = Connection.CreateCommand();
         cmd.Transaction = _transaction;
-        cmd.CommandText = SearchSql;
-        BindSearchParameters(cmd, queryVector, filters, topK, oversample);
-        return await ReadSearchResults(cmd, cancellationToken);
-    }
-
-    private static void BindSearchParameters(
-        SqliteCommand cmd,
-        ReadOnlyMemory<float> queryVector,
-        QueryFilters filters,
-        int topK,
-        int oversample)
-    {
+        cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("$query_vector", FloatArrayToBlob(queryVector.Span));
         cmd.Parameters.AddWithValue("$oversample", oversample);
-        cmd.Parameters.AddWithValue("$top_k", topK);
-        cmd.Parameters.AddWithValue("$symbol_kind", (object?)filters.SymbolKind ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("$project", (object?)filters.ContainingProjectName ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("$namespace", (object?)filters.ContainingNamespace ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("$is_async", filters.IsAsync.HasValue ? (filters.IsAsync.Value ? 1 : 0) : DBNull.Value);
-    }
-
-    private static async Task<IReadOnlyList<QueryHit>> ReadSearchResults(SqliteCommand cmd, CancellationToken cancellationToken)
-    {
-        var results = new List<QueryHit>();
+        var results = new List<KnnRanked>();
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        int rank = 0;
         while (await reader.ReadAsync(cancellationToken))
         {
-            results.Add(new QueryHit(
-                ChunkId: reader.GetInt64(0),
-                RelativeFilePath: reader.GetString(1),
-                LineStart: reader.GetInt32(2),
-                LineEnd: reader.GetInt32(3),
-                FullyQualifiedSymbolName: reader.GetString(4),
-                SymbolKind: reader.GetString(5),
-                Distance: reader.GetDouble(6),
-                SourceText: reader.GetString(7)));
+            results.Add(new KnnRanked(reader.GetInt64(0), reader.GetDouble(1), rank));
+            rank++;
         }
         return results;
     }
 
-    private const string SearchSql = @"WITH candidates AS (
-    SELECT rowid, distance
-    FROM chunk_embeddings
-    WHERE embedding MATCH $query_vector
-    ORDER BY distance
-    LIMIT $oversample
-)
-SELECT c.chunk_id,
-       c.relative_file_path,
-       c.start_line_number,
-       c.end_line_number,
-       c.fully_qualified_symbol_name,
-       c.symbol_kind,
-       cand.distance,
-       c.source_text
-FROM candidates cand
-JOIN code_chunks c ON c.chunk_id = cand.rowid
-WHERE ($symbol_kind IS NULL OR c.symbol_kind = $symbol_kind)
+    private async Task<IReadOnlyList<Bm25Ranked>> RunBm25Async(string queryText, CancellationToken cancellationToken)
+    {
+        var sanitized = SanitizeBm25Query(queryText);
+        if (string.IsNullOrEmpty(sanitized))
+        {
+            return Array.Empty<Bm25Ranked>();
+        }
+        const string sql = @"SELECT chunk_id FROM chunk_text_index
+            WHERE chunk_text_index MATCH $bm25_query
+            ORDER BY rank LIMIT $bm25_limit";
+        await using var cmd = Connection.CreateCommand();
+        cmd.Transaction = _transaction;
+        cmd.CommandText = sql;
+        cmd.Parameters.AddWithValue("$bm25_query", sanitized);
+        cmd.Parameters.AddWithValue("$bm25_limit", Bm25Limit);
+        var results = new List<Bm25Ranked>();
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        int rank = 0;
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var raw = reader.GetValue(0);
+            long id = Convert.ToInt64(raw, CultureInfo.InvariantCulture);
+            results.Add(new Bm25Ranked(id, rank));
+            rank++;
+        }
+        return results;
+    }
+
+    private static string SanitizeBm25Query(string queryText)
+    {
+        var sb = new StringBuilder(queryText.Length);
+        bool lastWasSpace = true;
+        foreach (var c in queryText)
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                sb.Append(c);
+                lastWasSpace = false;
+            }
+            else if (char.IsWhiteSpace(c))
+            {
+                if (!lastWasSpace)
+                {
+                    sb.Append(' ');
+                    lastWasSpace = true;
+                }
+            }
+        }
+        return sb.ToString().Trim();
+    }
+
+    private static IReadOnlyDictionary<long, FusedCandidate> FuseResults(
+        IReadOnlyList<KnnRanked> knn,
+        IReadOnlyList<Bm25Ranked> bm25)
+    {
+        var fused = new Dictionary<long, FusedCandidate>();
+        foreach (var k in knn)
+        {
+            var contribution = 1.0 / (RrfK + k.Rank);
+            fused[k.ChunkId] = new FusedCandidate(k.ChunkId, k.Distance, contribution);
+        }
+        foreach (var b in bm25)
+        {
+            var contribution = 1.0 / (RrfK + b.Rank);
+            if (fused.TryGetValue(b.ChunkId, out var existing))
+            {
+                fused[b.ChunkId] = existing with { Score = existing.Score + contribution };
+            }
+            else
+            {
+                fused[b.ChunkId] = new FusedCandidate(b.ChunkId, double.NaN, contribution);
+            }
+        }
+        return fused;
+    }
+
+    private async Task<IReadOnlyList<QueryHit>> ProjectFusedHitsAsync(
+        IReadOnlyDictionary<long, FusedCandidate> fused,
+        QueryFilters filters,
+        int topK,
+        CancellationToken cancellationToken)
+    {
+        if (fused.Count == 0)
+        {
+            return Array.Empty<QueryHit>();
+        }
+        var ordered = fused.Values.OrderByDescending(f => f.Score).ToList();
+        var results = new List<QueryHit>(topK);
+        foreach (var candidate in ordered)
+        {
+            if (results.Count >= topK)
+            {
+                break;
+            }
+            if (filters.MaxDistance.HasValue && !double.IsNaN(candidate.Distance)
+                && candidate.Distance > filters.MaxDistance.Value)
+            {
+                continue;
+            }
+            var hit = await TryProjectHitAsync(candidate, filters, cancellationToken);
+            if (hit is not null)
+            {
+                results.Add(hit);
+            }
+        }
+        return results;
+    }
+
+    private async Task<QueryHit?> TryProjectHitAsync(FusedCandidate candidate, QueryFilters filters, CancellationToken cancellationToken)
+    {
+        await using var cmd = Connection.CreateCommand();
+        cmd.Transaction = _transaction;
+        cmd.CommandText = ChunkProjectionSql;
+        cmd.Parameters.AddWithValue("$chunk_id", candidate.ChunkId);
+        BindChunkFilterParameters(cmd, filters);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+        return new QueryHit(
+            ChunkId: reader.GetInt64(0),
+            RelativeFilePath: reader.GetString(1),
+            LineStart: reader.GetInt32(2),
+            LineEnd: reader.GetInt32(3),
+            FullyQualifiedSymbolName: reader.GetString(4),
+            SymbolKind: reader.GetString(5),
+            Distance: candidate.Distance,
+            FusedScore: candidate.Score,
+            SourceText: reader.GetString(6));
+    }
+
+    private static void BindChunkFilterParameters(SqliteCommand cmd, QueryFilters filters)
+    {
+        cmd.Parameters.AddWithValue("$symbol_kind", (object?)filters.SymbolKind ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$project", (object?)filters.ContainingProjectName ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$namespace", (object?)filters.ContainingNamespace ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$is_async", filters.IsAsync.HasValue ? (filters.IsAsync.Value ? 1 : 0) : DBNull.Value);
+        cmd.Parameters.AddWithValue("$accessibility", (object?)filters.Accessibility ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$has_attr", (object?)filters.HasAttributeFullyQualifiedName ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$impl", (object?)filters.ImplementsInterfaceFullyQualifiedName ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$rt_contains", (object?)filters.ReturnTypeContains ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$exclude_tests", filters.ExcludeTests ? 1 : 0);
+        cmd.Parameters.AddWithValue("$exclude_ns", (object?)filters.ExcludeNamespaceContains ?? DBNull.Value);
+    }
+
+    private const string ChunkProjectionSql = @"SELECT
+    c.chunk_id,
+    c.relative_file_path,
+    c.start_line_number,
+    c.end_line_number,
+    c.fully_qualified_symbol_name,
+    c.symbol_kind,
+    c.source_text
+FROM code_chunks c
+WHERE c.chunk_id = $chunk_id
+  AND ($symbol_kind IS NULL OR c.symbol_kind = $symbol_kind)
   AND ($project IS NULL OR c.containing_project_name = $project)
   AND ($namespace IS NULL OR c.containing_namespace = $namespace)
   AND ($is_async IS NULL OR c.is_async = $is_async)
-ORDER BY cand.distance
-LIMIT $top_k";
+  AND ($accessibility IS NULL OR c.accessibility = $accessibility)
+  AND ($has_attr IS NULL OR EXISTS (SELECT 1 FROM chunk_attributes a WHERE a.chunk_id = c.chunk_id AND a.attribute_fully_qualified_name = $has_attr))
+  AND ($impl IS NULL OR EXISTS (SELECT 1 FROM chunk_implemented_interfaces i WHERE i.chunk_id = c.chunk_id AND i.interface_fully_qualified_name = $impl))
+  AND ($rt_contains IS NULL OR c.return_type_fully_qualified_name LIKE '%' || $rt_contains || '%')
+  AND ($exclude_tests = 0 OR c.containing_namespace IS NULL OR (c.containing_namespace NOT LIKE '%.Tests' AND c.containing_namespace NOT LIKE '%.Tests.%'))
+  AND ($exclude_ns IS NULL OR c.containing_namespace IS NULL OR c.containing_namespace NOT LIKE '%' || $exclude_ns || '%')";
+
+    private sealed record KnnRanked(long ChunkId, double Distance, int Rank);
+
+    private sealed record Bm25Ranked(long ChunkId, int Rank);
+
+    private sealed record FusedCandidate(long ChunkId, double Distance, double Score);
 }

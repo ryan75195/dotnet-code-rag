@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS code_chunks (
     parameter_count                       INTEGER NULL,
 
     documentation_comment_xml             TEXT NULL,
+    xml_doc_summary                       TEXT NULL,
 
     source_text                           TEXT NOT NULL,
     source_text_hash                      TEXT NOT NULL
@@ -94,4 +95,6 @@ CREATE INDEX IF NOT EXISTS idx_attributes_name      ON chunk_attributes(attribut
 CREATE INDEX IF NOT EXISTS idx_interfaces_name      ON chunk_implemented_interfaces(interface_fully_qualified_name);
 CREATE INDEX IF NOT EXISTS idx_params_type          ON chunk_method_parameters(parameter_type_fully_qualified_name);
 
-CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(embedding float[3072]);
+CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(embedding float[{EMBEDDING_DIM}]);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS chunk_text_index USING fts5(chunk_id UNINDEXED, content);

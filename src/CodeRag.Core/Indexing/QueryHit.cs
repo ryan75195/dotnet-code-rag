@@ -8,4 +8,5 @@ public sealed record QueryHit(
     string FullyQualifiedSymbolName,
     string SymbolKind,
     double Distance,
+    double FusedScore,
     string SourceText);

@@ -107,7 +107,7 @@ internal sealed class IndexingService : IIndexingService
         foreach (var op in inserts)
         {
             var id = await store.InsertChunkAsync(op.Chunk, cancellationToken);
-            queue.Add(new EmbedQueueItem(id, op.Chunk.SourceText));
+            queue.Add(BuildQueueItem(id, op.Chunk));
             count++;
         }
         return new InsertApplyResult(count, queue);
@@ -122,11 +122,17 @@ internal sealed class IndexingService : IIndexingService
             await store.UpdateChunkAsync(op.ChunkId, op.Chunk, cancellationToken);
             if (op.ContentChanged)
             {
-                queue.Add(new EmbedQueueItem(op.ChunkId, op.Chunk.SourceText));
+                queue.Add(BuildQueueItem(op.ChunkId, op.Chunk));
             }
             count++;
         }
         return new UpdateApplyResult(count, queue);
+    }
+
+    private static EmbedQueueItem BuildQueueItem(long chunkId, CodeChunk chunk)
+    {
+        var enriched = EmbeddingTextBuilder.BuildEmbeddingInput(chunk);
+        return new EmbedQueueItem(chunkId, enriched);
     }
 
     private async Task<int> EmbedAndUpsert(IIndexStore store, IReadOnlyList<EmbedQueueItem> embedQueue, CancellationToken cancellationToken)
@@ -135,11 +141,13 @@ internal sealed class IndexingService : IIndexingService
         {
             return 0;
         }
-        var inputs = embedQueue.Select(q => q.SourceText).ToList();
-        var vectors = await _deps.EmbeddingClient.Embed(inputs, cancellationToken);
+        var inputs = embedQueue.Select(q => q.EmbeddingInput).ToList();
+        var vectors = await _deps.EmbeddingClient.Embed(inputs, EmbeddingInputType.Document, cancellationToken);
         for (int i = 0; i < embedQueue.Count; i++)
         {
-            await store.UpsertEmbeddingAsync(embedQueue[i].ChunkId, vectors[i], cancellationToken);
+            var item = embedQueue[i];
+            await store.UpsertEmbeddingAsync(item.ChunkId, vectors[i], cancellationToken);
+            await store.UpsertFtsContentAsync(item.ChunkId, item.EmbeddingInput, cancellationToken);
         }
         return embedQueue.Count;
     }
@@ -147,13 +155,27 @@ internal sealed class IndexingService : IIndexingService
     private IndexMetadata BuildMetadata(IndexRunRequest request, string repoRoot, string headSha)
     {
         return new IndexMetadata(
-            SchemaVersion: 1,
+            SchemaVersion: 2,
             SolutionFilePath: request.SolutionFilePath,
             RepositoryRootPath: repoRoot,
             IndexedAtCommitSha: headSha,
             IndexedAtUtc: _deps.Time.GetUtcNow(),
-            EmbeddingModelName: EmbeddingOptions.ModelName,
-            EmbeddingVectorDimensions: EmbeddingOptions.VectorDimensions);
+            EmbeddingModelName: ResolveEmbeddingModelName(),
+            EmbeddingVectorDimensions: _deps.EmbeddingClient.VectorDimensions);
+    }
+
+    private string ResolveEmbeddingModelName()
+    {
+        var dim = _deps.EmbeddingClient.VectorDimensions;
+        if (dim == VoyageEmbeddingOptions.VectorDimensions)
+        {
+            return VoyageEmbeddingOptions.ModelName;
+        }
+        if (dim == OpenAIEmbeddingOptions.VectorDimensions)
+        {
+            return OpenAIEmbeddingOptions.ModelName;
+        }
+        return _deps.EmbeddingClient.GetType().Name;
     }
 
     private async Task<ReconciliationPlan> PlanFullReindex(
@@ -313,7 +335,7 @@ internal sealed class IndexingService : IIndexingService
 
     private sealed record RunCounts(int Inserted, int Updated, int Deleted, int Embedded);
 
-    private sealed record EmbedQueueItem(long ChunkId, string SourceText);
+    private sealed record EmbedQueueItem(long ChunkId, string EmbeddingInput);
 
     private sealed record InsertApplyResult(int InsertedCount, IReadOnlyList<EmbedQueueItem> EmbedQueue);
 

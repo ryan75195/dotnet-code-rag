@@ -23,6 +23,7 @@ internal static class TestChunks
         ReturnTypeFullyQualifiedName: "System.Threading.Tasks.Task<int>",
         ParameterCount: 1,
         DocumentationCommentXml: null,
+        XmlDocSummary: null,
         SourceText: "public async Task<int> RunAsync(CancellationToken ct) => 0;",
         SourceTextHash: "deadbeef",
         Attributes: ImmutableArray.Create(new ChunkAttribute("System.ObsoleteAttribute", "[\"deprecated\"]")),

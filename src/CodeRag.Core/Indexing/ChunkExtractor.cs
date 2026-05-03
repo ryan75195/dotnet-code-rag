@@ -1,5 +1,7 @@
 ﻿using System.Collections.Immutable;
 using System.Text.Json;
+using System.Xml;
+using System.Xml.Linq;
 using CodeRag.Core.Indexing.Interfaces;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -214,6 +216,7 @@ public sealed class ChunkExtractor : IChunkExtractor
             ReturnTypeFullyQualifiedName: null,
             ParameterCount: null,
             DocumentationCommentXml: NullIfEmpty(symbol.GetDocumentationCommentXml()),
+            XmlDocSummary: ResolveXmlDocSummary(symbol),
             SourceText: sourceText,
             SourceTextHash: _hashingService.Hash(sourceText),
             Attributes: BuildAttributes(symbol),
@@ -476,6 +479,7 @@ public sealed class ChunkExtractor : IChunkExtractor
             ReturnTypeFullyQualifiedName: details.ReturnType,
             ParameterCount: details.ParameterCount,
             DocumentationCommentXml: NullIfEmpty(symbol.GetDocumentationCommentXml()),
+            XmlDocSummary: ResolveXmlDocSummary(symbol),
             SourceText: sourceText,
             SourceTextHash: _hashingService.Hash(sourceText),
             Attributes: BuildAttributes(symbol),
@@ -585,6 +589,25 @@ public sealed class ChunkExtractor : IChunkExtractor
             return null;
         }
         return symbol.ContainingNamespace.ToDisplayString();
+    }
+
+    private static string? ResolveXmlDocSummary(ISymbol symbol)
+    {
+        var xml = symbol.GetDocumentationCommentXml();
+        if (string.IsNullOrWhiteSpace(xml))
+        {
+            return null;
+        }
+        try
+        {
+            var document = XDocument.Parse(xml);
+            var summary = document.Descendants("summary").FirstOrDefault()?.Value?.Trim();
+            return string.IsNullOrEmpty(summary) ? null : summary;
+        }
+        catch (XmlException)
+        {
+            return null;
+        }
     }
 
     private sealed record ChunkLocation(string RelativeFilePath, int StartLineNumber, int EndLineNumber);
