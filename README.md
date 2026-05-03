@@ -1,6 +1,16 @@
 # CodeRag
 
-Console CLI solution scaffolded from the [dotnet-agent-harness](https://github.com/ryan75195/dotnet-agent-harness) `cli` template.
+CodeRag is a local-first codebase retrieval tool for .NET solutions. It parses C# projects with Roslyn, chunks symbols with metadata, stores lexical and vector indexes in SQLite, and exposes both a CLI and MCP server for semantic code search.
+
+Use it when an AI coding agent needs fast answers to questions like "where is this service implemented?", "which classes implement this interface?", or "show me code related to this behavior" without repeatedly scanning the whole repository.
+
+## Features
+
+- Index .NET solutions into a local SQLite database.
+- Generate embeddings with OpenAI or Voyage.
+- Query code with semantic search plus filters for symbol kind, accessibility, attributes, interfaces, and return types.
+- Look up exact symbols, interface implementations, and attributed members through MCP tools.
+- Keep architecture constraints enforced with custom analyzers and architecture tests.
 
 ## First-time setup
 
