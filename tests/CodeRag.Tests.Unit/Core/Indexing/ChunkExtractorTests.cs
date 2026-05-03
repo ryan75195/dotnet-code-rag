@@ -255,6 +255,31 @@ public class ChunkExtractorTests
     }
 
     [Test]
+    public void Should_capture_xml_doc_summary_when_present()
+    {
+        var src = @"
+            namespace Acme;
+            public class Foo
+            {
+                /// <summary>does important work</summary>
+                public void Run() { }
+            }
+        ";
+        var tree = CSharpSyntaxTree.ParseText(src, path: "C:/repo/src/Test.cs");
+        var compilationOptions = new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary);
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            new[] { tree },
+            new[] { MetadataReference.CreateFromFile(typeof(object).Assembly.Location) },
+            compilationOptions);
+
+        var chunks = _extractor.Extract(compilation, tree, "TestProject", "TestAssembly", "C:/repo", CancellationToken.None);
+
+        var method = chunks.Single(c => c.SymbolKind == SymbolKinds.Method);
+        method.XmlDocSummary.Should().Be("does important work");
+    }
+
+    [Test]
     public void Should_skip_files_outside_repository_root()
     {
         var src = "namespace X; public class Foo { }";

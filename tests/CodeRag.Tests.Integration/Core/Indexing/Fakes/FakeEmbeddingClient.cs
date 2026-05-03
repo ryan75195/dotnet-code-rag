@@ -1,19 +1,32 @@
 ﻿using System.Security.Cryptography;
 using System.Text;
+using CodeRag.Core.Indexing;
 using CodeRag.Core.Indexing.Interfaces;
 
 namespace CodeRag.Tests.Integration.Core.Indexing.Fakes;
 
 public sealed class FakeEmbeddingClient : IEmbeddingClient
 {
+    public int VectorDimensions { get; }
     public int CallCount { get; private set; }
     public int InputCount { get; private set; }
 
-    public Task<IReadOnlyList<ReadOnlyMemory<float>>> Embed(IReadOnlyList<string> inputs, CancellationToken cancellationToken)
+    public FakeEmbeddingClient()
+        : this(1024)
     {
+    }
+
+    public FakeEmbeddingClient(int vectorDimensions)
+    {
+        VectorDimensions = vectorDimensions;
+    }
+
+    public Task<IReadOnlyList<ReadOnlyMemory<float>>> Embed(IReadOnlyList<string> inputs, EmbeddingInputType inputType, CancellationToken cancellationToken)
+    {
+        _ = inputType;
         CallCount++;
         InputCount += inputs.Count;
-        var results = inputs.Select(input => (ReadOnlyMemory<float>)SeededVectorFor(input)).ToList();
+        var results = inputs.Select(input => (ReadOnlyMemory<float>)SeededVectorFor(input, VectorDimensions)).ToList();
         return Task.FromResult<IReadOnlyList<ReadOnlyMemory<float>>>(results);
     }
 
@@ -23,13 +36,13 @@ public sealed class FakeEmbeddingClient : IEmbeddingClient
         InputCount = 0;
     }
 
-    private static float[] SeededVectorFor(string input)
+    private static float[] SeededVectorFor(string input, int dim)
     {
         var seed = SHA256.HashData(Encoding.UTF8.GetBytes(input));
 #pragma warning disable CA5394
         var rng = new Random(BitConverter.ToInt32(seed, 0));
 #pragma warning restore CA5394
-        var v = new float[3072];
+        var v = new float[dim];
         for (int i = 0; i < v.Length; i++)
         {
 #pragma warning disable CA5394

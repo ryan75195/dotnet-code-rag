@@ -10,16 +10,19 @@ public sealed class OpenAIEmbeddingClient : IEmbeddingClient
 
     public OpenAIEmbeddingClient(string apiKey)
     {
-        _client = new EmbeddingClient(model: EmbeddingOptions.ModelName, apiKey: apiKey);
+        _client = new EmbeddingClient(model: OpenAIEmbeddingOptions.ModelName, apiKey: apiKey);
     }
 
-    public async Task<IReadOnlyList<ReadOnlyMemory<float>>> Embed(IReadOnlyList<string> inputs, CancellationToken cancellationToken)
+    public int VectorDimensions => OpenAIEmbeddingOptions.VectorDimensions;
+
+    public async Task<IReadOnlyList<ReadOnlyMemory<float>>> Embed(IReadOnlyList<string> inputs, EmbeddingInputType inputType, CancellationToken cancellationToken)
     {
+        _ = inputType;
         var results = new ReadOnlyMemory<float>[inputs.Count];
-        for (int batchStart = 0; batchStart < inputs.Count; batchStart += EmbeddingOptions.MaxBatchSize)
+        for (int batchStart = 0; batchStart < inputs.Count; batchStart += OpenAIEmbeddingOptions.MaxBatchSize)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            int batchEnd = Math.Min(batchStart + EmbeddingOptions.MaxBatchSize, inputs.Count);
+            int batchEnd = Math.Min(batchStart + OpenAIEmbeddingOptions.MaxBatchSize, inputs.Count);
             var batchInputs = inputs.Skip(batchStart).Take(batchEnd - batchStart).Select(TruncateForModel).ToList();
             var batchVectors = await EmbedBatchWithRetry(batchInputs, cancellationToken);
             for (int i = 0; i < batchVectors.Count; i++)
@@ -34,7 +37,7 @@ public sealed class OpenAIEmbeddingClient : IEmbeddingClient
     private async Task<IReadOnlyList<ReadOnlyMemory<float>>> EmbedBatchWithRetry(IReadOnlyList<string> inputs, CancellationToken cancellationToken)
     {
         Exception? lastError = null;
-        for (int attempt = 0; attempt < EmbeddingOptions.MaxRetryAttempts; attempt++)
+        for (int attempt = 0; attempt < OpenAIEmbeddingOptions.MaxRetryAttempts; attempt++)
         {
             try
             {
@@ -48,7 +51,7 @@ public sealed class OpenAIEmbeddingClient : IEmbeddingClient
                 await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
             }
         }
-        throw new InvalidOperationException($"OpenAI embed failed after {EmbeddingOptions.MaxRetryAttempts} attempts.", lastError);
+        throw new InvalidOperationException($"OpenAI embed failed after {OpenAIEmbeddingOptions.MaxRetryAttempts} attempts.", lastError);
     }
 
     private static bool IsRetriable(Exception ex)

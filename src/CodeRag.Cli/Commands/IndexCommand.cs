@@ -14,9 +14,9 @@ internal sealed class IndexCommand
 
     public async Task<int> ExecuteAsync(string solutionPath, string? outputDir, CancellationToken cancellationToken)
     {
-        if (Environment.GetEnvironmentVariable("OPENAI_API_KEY") is null)
+        if (!IsAnyEmbeddingKeyConfigured())
         {
-            await Console.Error.WriteLineAsync("OPENAI_API_KEY is not set.");
+            await Console.Error.WriteLineAsync("Neither VOYAGE_API_KEY nor OPENAI_API_KEY is set.");
             return 2;
         }
         if (!File.Exists(solutionPath))
@@ -36,5 +36,11 @@ internal sealed class IndexCommand
                           $"{result.EmbeddedChunks} embeddings.");
         Console.WriteLine($"Wrote: {dbPath}");
         return 0;
+    }
+
+    private static bool IsAnyEmbeddingKeyConfigured()
+    {
+        return Environment.GetEnvironmentVariable("VOYAGE_API_KEY") is not null
+            || Environment.GetEnvironmentVariable("OPENAI_API_KEY") is not null;
     }
 }

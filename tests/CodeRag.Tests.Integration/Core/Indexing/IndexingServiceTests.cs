@@ -27,7 +27,8 @@ public class IndexingServiceTests
         var hashingService = new SourceTextHashingService();
         var extractor = new ChunkExtractor(hashingService);
         var reconciliationService = new ReconciliationService();
-        Func<string, IIndexStore> storeFactory = path => new SqliteIndexStore(path);
+        var embeddingDimension = _embedding.VectorDimensions;
+        Func<string, IIndexStore> storeFactory = path => new SqliteIndexStore(path, embeddingDimension);
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 5, 2, 12, 0, 0, TimeSpan.Zero));
 
         var deps = new IndexingDependencies(
@@ -61,13 +62,13 @@ public class IndexingServiceTests
         result.UpdatedChunks.Should().Be(0);
         result.DeletedChunks.Should().Be(0);
 
-        using var verify = new SqliteIndexStore(_dbPath);
+        using var verify = new SqliteIndexStore(_dbPath, _embedding.VectorDimensions);
         await verify.OpenAsync(CancellationToken.None);
         var meta = await verify.TryGetMetadataAsync(CancellationToken.None);
         meta.Should().NotBeNull();
         meta!.IndexedAtCommitSha.Should().Be(_git.HeadSha);
-        meta.EmbeddingModelName.Should().Be(EmbeddingOptions.ModelName);
-        meta.EmbeddingVectorDimensions.Should().Be(EmbeddingOptions.VectorDimensions);
+        meta.EmbeddingModelName.Should().Be(VoyageEmbeddingOptions.ModelName);
+        meta.EmbeddingVectorDimensions.Should().Be(_embedding.VectorDimensions);
     }
 
     [Test]
@@ -131,7 +132,7 @@ public class IndexingServiceTests
 
         result.DeletedChunks.Should().BeGreaterThan(0);
 
-        using var verify = new SqliteIndexStore(_dbPath);
+        using var verify = new SqliteIndexStore(_dbPath, _embedding.VectorDimensions);
         await verify.OpenAsync(CancellationToken.None);
         IIndexStore verifyStore = verify;
         var summaries = await verifyStore.GetChunkSummariesForFileAsync(relativePath, CancellationToken.None);
@@ -172,7 +173,7 @@ public class IndexingServiceTests
     {
         await RunAsync();
 
-        using var verify = new SqliteIndexStore(_dbPath);
+        using var verify = new SqliteIndexStore(_dbPath, _embedding.VectorDimensions);
         await verify.OpenAsync(CancellationToken.None);
         await using var cmd = verify.Connection.CreateCommand();
         cmd.CommandText = @"
