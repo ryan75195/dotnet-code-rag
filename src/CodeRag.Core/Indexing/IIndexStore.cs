@@ -25,4 +25,20 @@ internal interface IIndexStore : IDisposable
         QueryFilters filters,
         int topK,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<SymbolHit>> FindSymbolByName(
+        string nameOrFullyQualifiedName,
+        string? symbolKind,
+        int limit,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<SymbolHit>> ListImplementations(
+        string interfaceFullyQualifiedName,
+        int limit,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<SymbolHit>> ListAttributedWith(
+        string attributeFullyQualifiedName,
+        int limit,
+        CancellationToken cancellationToken);
 }

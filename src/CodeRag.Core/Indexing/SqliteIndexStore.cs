@@ -825,6 +825,107 @@ WHERE c.chunk_id = $chunk_id
   AND ($exclude_tests = 0 OR c.containing_namespace IS NULL OR (c.containing_namespace NOT LIKE '%.Tests' AND c.containing_namespace NOT LIKE '%.Tests.%'))
   AND ($exclude_ns IS NULL OR c.containing_namespace IS NULL OR c.containing_namespace NOT LIKE '%' || $exclude_ns || '%')";
 
+    async Task<IReadOnlyList<SymbolHit>> IIndexStore.FindSymbolByName(
+        string nameOrFullyQualifiedName,
+        string? symbolKind,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        const string sql = SymbolProjectionPrefix + @"
+WHERE (c.symbol_display_name = $name
+       OR c.fully_qualified_symbol_name = $name
+       OR c.fully_qualified_symbol_name LIKE '%.' || $name
+       OR c.fully_qualified_symbol_name LIKE '%.' || $name || '(%')
+  AND ($kind IS NULL OR c.symbol_kind = $kind)
+ORDER BY length(c.fully_qualified_symbol_name), c.fully_qualified_symbol_name
+LIMIT $limit";
+        await using var cmd = Connection.CreateCommand();
+        cmd.Transaction = _transaction;
+        cmd.CommandText = sql;
+        cmd.Parameters.AddWithValue("$name", nameOrFullyQualifiedName);
+        cmd.Parameters.AddWithValue("$kind", (object?)symbolKind ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$limit", limit);
+        return await ReadSymbolHitsAsync(cmd, cancellationToken);
+    }
+
+    async Task<IReadOnlyList<SymbolHit>> IIndexStore.ListImplementations(
+        string interfaceFullyQualifiedName,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        const string sql = SymbolProjectionPrefix + @"
+JOIN chunk_implemented_interfaces i ON i.chunk_id = c.chunk_id
+WHERE i.interface_fully_qualified_name = $iface
+ORDER BY c.fully_qualified_symbol_name
+LIMIT $limit";
+        await using var cmd = Connection.CreateCommand();
+        cmd.Transaction = _transaction;
+        cmd.CommandText = sql;
+        cmd.Parameters.AddWithValue("$iface", interfaceFullyQualifiedName);
+        cmd.Parameters.AddWithValue("$limit", limit);
+        return await ReadSymbolHitsAsync(cmd, cancellationToken);
+    }
+
+    async Task<IReadOnlyList<SymbolHit>> IIndexStore.ListAttributedWith(
+        string attributeFullyQualifiedName,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        const string sql = SymbolProjectionPrefix + @"
+JOIN chunk_attributes a ON a.chunk_id = c.chunk_id
+WHERE a.attribute_fully_qualified_name = $attr
+ORDER BY c.fully_qualified_symbol_name
+LIMIT $limit";
+        await using var cmd = Connection.CreateCommand();
+        cmd.Transaction = _transaction;
+        cmd.CommandText = sql;
+        cmd.Parameters.AddWithValue("$attr", attributeFullyQualifiedName);
+        cmd.Parameters.AddWithValue("$limit", limit);
+        return await ReadSymbolHitsAsync(cmd, cancellationToken);
+    }
+
+    [SuppressMessage(
+        "Security",
+        "CA2100:Review SQL queries for security vulnerabilities",
+        Justification = "SQL is composed from internal const fragments only; no user input.")]
+    private static async Task<IReadOnlyList<SymbolHit>> ReadSymbolHitsAsync(SqliteCommand cmd, CancellationToken cancellationToken)
+    {
+        var results = new List<SymbolHit>();
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            results.Add(new SymbolHit(
+                ChunkId: reader.GetInt64(0),
+                RelativeFilePath: reader.GetString(1),
+                LineStart: reader.GetInt32(2),
+                LineEnd: reader.GetInt32(3),
+                FullyQualifiedSymbolName: reader.GetString(4),
+                SymbolDisplayName: reader.GetString(5),
+                SymbolKind: reader.GetString(6),
+                Accessibility: reader.GetString(7),
+                SymbolSignatureDisplay: reader.GetString(8),
+                ContainingNamespace: await reader.IsDBNullAsync(9, cancellationToken) ? null : reader.GetString(9),
+                ParentSymbolFullyQualifiedName: await reader.IsDBNullAsync(10, cancellationToken) ? null : reader.GetString(10),
+                XmlDocSummary: await reader.IsDBNullAsync(11, cancellationToken) ? null : reader.GetString(11)));
+        }
+        return results;
+    }
+
+    private const string SymbolProjectionPrefix = @"SELECT
+    c.chunk_id,
+    c.relative_file_path,
+    c.start_line_number,
+    c.end_line_number,
+    c.fully_qualified_symbol_name,
+    c.symbol_display_name,
+    c.symbol_kind,
+    c.accessibility,
+    c.symbol_signature_display,
+    c.containing_namespace,
+    c.parent_symbol_fully_qualified_name,
+    c.xml_doc_summary
+FROM code_chunks c";
+
     private sealed record KnnRanked(long ChunkId, double Distance, int Rank);
 
     private sealed record Bm25Ranked(long ChunkId, int Rank);

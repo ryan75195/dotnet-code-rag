@@ -43,4 +43,17 @@ public class LayerDependencyTests
         firstPartyRefs.Should().BeEquivalentTo(new[] { "CodeRag.Core" },
             "Cli is the sole entry point and may only reference Core within first-party assemblies");
     }
+
+    [Test]
+    public void Should_keep_mcp_depending_only_on_first_party_core()
+    {
+        var mcpAssembly = Assembly.Load("CodeRag.Mcp");
+        var firstPartyRefs = mcpAssembly.GetReferencedAssemblies()
+            .Select(a => a.Name)
+            .Where(name => name?.StartsWith("CodeRag", StringComparison.Ordinal) == true)
+            .ToList();
+
+        firstPartyRefs.Should().BeEquivalentTo(new[] { "CodeRag.Core" },
+            "Mcp is a thin protocol shim and may only reference Core within first-party assemblies");
+    }
 }

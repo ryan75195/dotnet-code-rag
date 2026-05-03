@@ -145,7 +145,7 @@ public class NamingConventionTests
     [Test]
     public void Should_not_use_async_suffix_on_method_names()
     {
-        var assemblies = new[] { TestHelpers.CoreAssembly, TestHelpers.CliAssembly };
+        var assemblies = new[] { TestHelpers.CoreAssembly, TestHelpers.CliAssembly, TestHelpers.McpAssembly };
 
         var violations = assemblies
             .SelectMany(a => a.GetTypes())
@@ -165,7 +165,7 @@ public class NamingConventionTests
     [Test]
     public void Should_use_recognised_role_suffix_on_concrete_classes()
     {
-        var assemblies = new[] { TestHelpers.CoreAssembly, TestHelpers.CliAssembly };
+        var assemblies = new[] { TestHelpers.CoreAssembly, TestHelpers.CliAssembly, TestHelpers.McpAssembly };
 
         var concreteClasses = assemblies
             .SelectMany(a => a.GetTypes())
@@ -191,7 +191,7 @@ public class NamingConventionTests
     [Test]
     public void Should_place_interfaces_in_interfaces_namespace()
     {
-        var assemblies = new[] { TestHelpers.CoreAssembly, TestHelpers.CliAssembly };
+        var assemblies = new[] { TestHelpers.CoreAssembly, TestHelpers.CliAssembly, TestHelpers.McpAssembly };
 
         var projectInterfaces = assemblies
             .SelectMany(a => a.GetTypes())
